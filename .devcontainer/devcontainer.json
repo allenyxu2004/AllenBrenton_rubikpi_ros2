@@ -1,0 +1,26 @@
+{
+  "name": "ROS 2 (cse276a)",
+  "image": "ros:jazzy-ros-core",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws/src/rubikpi_ros2,type=bind",
+  "workspaceFolder": "/ros2_ws/src/rubikpi_ros2",
+  "postCreateCommand": "apt-get update && apt-get install -y curl python3-pip python3-numpy python3-serial python3-colcon-common-extensions && pip install --break-system-packages pynput && curl -fsSL https://claude.ai/install.sh | bash && echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc && echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.analysis.extraPaths": [
+          "/opt/ros/jazzy/lib/python3.12/site-packages"
+        ]
+      }
+    }
+  },
+  "mounts": [
+    "source=claude-config,target=/root/.claude,type=volume"
+  ]
+}
