@@ -3,7 +3,7 @@
   "image": "ros:jazzy-ros-core",
   "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws/src/rubikpi_ros2,type=bind",
   "workspaceFolder": "/ros2_ws/src/rubikpi_ros2",
-  "postCreateCommand": "apt-get update && apt-get install -y curl python3-pip python3-numpy python3-serial python3-colcon-common-extensions && pip install --break-system-packages pynput && curl -fsSL https://claude.ai/install.sh | bash && echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc && echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc",
+  "postCreateCommand": "apt-get update && apt-get install -y curl python3-pip python3-numpy python3-serial python3-colcon-common-extensions && pip install --break-system-packages pynput && curl -fsSL https://claude.ai/install.sh | bash && echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc && echo 'source /opt/ros/jazzy/setup.bash' >> ~/.bashrc && echo 'source /ros2_ws/src/rubikpi_ros2/.devcontainer/dotfiles.bashrc' >> ~/.bashrc && git config --global user.name 'Brenton Dunn' && git config --global user.email '47510212+brentonmdunn@users.noreply.github.com'",
   "customizations": {
     "vscode": {
       "extensions": [
