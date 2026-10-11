@@ -10,6 +10,16 @@ ROS 2 starter code for UCSD CSE 276A (Intro to Robotics). It runs on a RubikPi (
 | `robot_vision/` | **`robot_vision_camera`** (differs from dir name) | ament_cmake, C++17 | GStreamer camera publisher + foxglove_bridge |
 | `apriltag_ros/` | `apriltag_ros` | ament_cmake, C++14, `-Werror` | Vendored christianrauch/apriltag_ros v3.3.0 |
 
+## Accessing the robot
+
+SSH into the RubikPi:
+
+```bash
+ssh ubuntu@192.168.1.61
+```
+
+Password: `csefa2026`
+
 ## Build & run
 
 This repo is meant to sit inside a colcon workspace's `src/` on the robot. A path baked into the code suggests `/home/ubuntu/ros2_ws/`.
