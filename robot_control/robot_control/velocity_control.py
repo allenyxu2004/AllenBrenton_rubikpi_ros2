@@ -6,16 +6,15 @@ import time
 
 
 # Motor commands are firmware units, not physical wheel speeds.
-FORWARD_LEFT = 0.36
+FORWARD_LEFT = 0.25
 FORWARD_RIGHT = 0.2
-FORWARD_SPEED = 44 * 0.0254 / 4  # m/s
+FORWARD_SPEED = 23.5 * 0.0254 / 2  # m/s: 23.5 inches in 2 seconds
 LEFT_TURN_LEFT = -0.45
 LEFT_TURN_RIGHT = 0.3
-LEFT_TURN_RATE = math.pi / 2 / 0.738  # rad/s magnitude
-RIGHT_TURN_LEFT = 0.42
+LEFT_TURN_RATE = math.pi / 2 / 0.989  # rad/s magnitude: 90 degrees
+RIGHT_TURN_LEFT = 0.45
 RIGHT_TURN_RIGHT = -0.3
-# Assumes the two right-turn trials produced 180 degrees TOTAL.
-RIGHT_TURN_RATE = math.pi / (0.740 + 0.738)
+RIGHT_TURN_RATE = math.pi / 2 / 0.859  # rad/s magnitude: 90 degrees
 MAX_SEGMENT_SECONDS = 4.0
 PUBLISH_PERIOD = 0.05  # 20 Hz
 STOP_SECONDS = 0.3
