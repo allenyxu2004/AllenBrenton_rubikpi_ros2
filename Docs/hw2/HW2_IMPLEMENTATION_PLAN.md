@@ -6,7 +6,7 @@
 
 ## 1. Assignment Overview & Requirements
 
-The goal of Homework 2 is to upgrade the HW1 open-loop waypoint controller (`robot_control/robot_control/velocity_control.py`) into a **closed-loop controller** using visual feedback from the onboard camera and known landmarks in the environment.
+The goal of Homework 2 is to upgrade the HW1 open-loop waypoint controller (`../../robot_control/robot_control/velocity_control.py`) into a **closed-loop controller** using visual feedback from the onboard camera and known landmarks in the environment.
 
 ### Required Waypoint Trajectory
 The robot must navigate through the following 4 waypoints in world coordinates $(x, y, \theta)$:
@@ -31,18 +31,18 @@ The RubikPi OV5647 camera has significant optical distortion, and `apriltag_ros`
    - Capture calibration images of a checkerboard on the RubikPi using `robot_vision_camera` or ROS 2 `camera_calibration`.
    - Compute accurate `camera_matrix`, `distortion_coefficients`, `rectification_matrix`, and `projection_matrix`.
 2. **Update configuration:**
-   - Replace the untuned parameters in `robot_vision/config/camera_parameter.yaml`.
+   - Replace the untuned parameters in `../../robot_vision/config/camera_parameter.yaml`.
 3. **Enable rectification:**
-   - In `robot_vision/launch/robot_vision_camera.launch.py`, set `image_rectify` default to `'true'` (or pass `image_rectify:=true` at launch).
-   - Check `robot_vision/src/robot_vision_camera.cpp` to verify that when `image_rectify` is enabled, the `CameraInfo` projection matrix `P` matches the rectified image intrinsics used by `apriltag_ros`.
+   - In `../../robot_vision/launch/robot_vision_camera.launch.py`, set `image_rectify` default to `'true'` (or pass `image_rectify:=true` at launch).
+   - Check `../../robot_vision/src/robot_vision_camera.cpp` to verify that when `image_rectify` is enabled, the `CameraInfo` projection matrix `P` matches the rectified image intrinsics used by `apriltag_ros`.
 
 ### Step 2: Landmark Setup & AprilTag Configuration (`apriltag_ros`)
 1. **Design the Landmark Map:**
    - Place AprilTags (36h11 family) around the workspace perimeter so that at least one tag is in the camera's field of view along the path $(0,0,0) \to (1,0,0) \to (1,2,\pi) \to (0,0,0)$.
    - Measure each tag's side length (in meters) and exact 3D pose $(x, y, z, \text{roll}, \text{pitch}, \text{yaw})$ in the **World Frame**.
-2. **Update `apriltag_ros/cfg/tags_36h11.yaml`:**
+2. **Update `../../apriltag_ros/cfg/tags_36h11.yaml`:**
    - Currently, only `ids: [0, 1]` and `frames: [tag_0, tag_1]` with size `0.165` m are configured (all other tag IDs are ignored when `tag.frames` is populated).
-   - Add all tag IDs, frame names (`tag_0`, `tag_1`, `tag_2`, ...), and measured tag sizes to `apriltag_ros/cfg/tags_36h11.yaml`.
+   - Add all tag IDs, frame names (`tag_0`, `tag_1`, `tag_2`, ...), and measured tag sizes to `../../apriltag_ros/cfg/tags_36h11.yaml`.
 3. **Create a Landmark Map Config (`robot_control/config/landmarks.yaml`):**
    - Store the known world pose $T_{\text{world}\leftarrow\text{tag}_i}$ for each `tag_i` so the localization node can compute the robot pose in the world frame.
 
@@ -59,11 +59,11 @@ Define and implement the coordinate transformations required by the assignment:
    - Extract the 2D pose $(x_{\text{meas}}, y_{\text{meas}}, \theta_{\text{meas}})$ in the world frame.
 3. **Noise Filtering & Missing-Landmark Handling (Dead-Reckoning Fusion):**
    - **When landmarks ARE visible:** Filter noisy PnP pose estimates (e.g., reject high decision-margin / distant outliers, average across multiple visible tags weighted by distance, and blend with dead-reckoning using a complementary filter, low-pass filter, or Extended Kalman Filter).
-   - **When NO landmarks are visible:** Fall back smoothly to the dead-reckoning model (`EstimatedPose.integrate(speed, turn_rate, dt)` in `robot_control/robot_control/kinematic_control.py`, optionally aided by `imu_data` yaw rate from `motor_control.py`). When a tag re-enters the field of view, update/correct the pose estimate.
+   - **When NO landmarks are visible:** Fall back smoothly to the dead-reckoning model (`EstimatedPose.integrate(speed, turn_rate, dt)` in `../../robot_control/robot_control/kinematic_control.py`, optionally aided by `imu_data` yaw rate from `motor_control.py`). When a tag re-enters the field of view, update/correct the pose estimate.
 
 ### Step 4: Closed-Loop Waypoint Controller (`robot_control`)
-Update `robot_control/robot_control/velocity_control.py` (or create a dedicated `closed_loop_control.py` entry point):
-1. **Update Waypoints File (`robot_control/config/waypoints.txt`):**
+Update `../../robot_control/robot_control/velocity_control.py` (or create a dedicated `closed_loop_control.py` entry point):
+1. **Update Waypoints File (`../../robot_control/config/waypoints.txt`):**
    - Set the HW2 waypoint sequence (scaled by your chosen unit length $U \ge 0.5\text{ m}$):
      ```text
      0, 0, 0
@@ -87,7 +87,7 @@ The report requires quantitative metrics and a 2D trajectory plot generated from
    - Read the logged CSV and plot the 2D trajectory dots $(x, y)$ sampled every $0.5\text{ s}$ or $1.0\text{ s}$ alongside the ground-truth waypoints and landmark positions.
 
 ### Step 6: Unified Launch & Package Configuration
-1. **Update `robot_control/setup.py`:**
+1. **Update `../../robot_control/setup.py`:**
    - Ensure any new config files (e.g., `config/landmarks.yaml`, `config/hw2_waypoints.txt`) are listed in `data_files`.
    - Register any new console script entry points in `entry_points['console_scripts']`.
 2. **Create a HW2 Launch File (`robot_control/launch/hw2_closed_loop_launch.py`):**
