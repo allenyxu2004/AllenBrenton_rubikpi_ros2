@@ -30,7 +30,7 @@ def generate_launch_description():
         DeclareLaunchArgument('output_format', default_value='BGR'),
         DeclareLaunchArgument('topic_name', default_value='camera/image_raw'),
         DeclareLaunchArgument('image_compress', default_value='true'),
-        DeclareLaunchArgument('image_rectify', default_value='false'),
+        DeclareLaunchArgument('image_rectify', default_value='true'),
         DeclareLaunchArgument(
             'camera_parameter_path',
             default_value=PathJoinSubstitution([
