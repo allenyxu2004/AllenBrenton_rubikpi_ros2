@@ -10,7 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/robot_teleop_launch.py']),
+        ('share/' + package_name + '/launch', ['launch/robot_teleop_launch.py', 'launch/camera_distance.launch.py']),
         ('share/' + package_name + '/config', ['config/waypoints.txt']),
     ],
     install_requires=[
@@ -27,6 +27,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'tag_distance = robot_control.tag_distance:main',
             'motor_control = robot_control.motor_control:main',
             'keyboard_control = robot_control.keyboard_control:main',
             'velocity_control = robot_control.velocity_control:main',
