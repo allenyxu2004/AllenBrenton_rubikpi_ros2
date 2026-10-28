@@ -5,7 +5,7 @@ RobotVisionCamera::RobotVisionCamera(const std::string & name)
 {
   getROSParams();
 
-  // Use Sensor Data QoS (Best Effort) for camera topics
+  // Reliable delivery for large image samples and matching CameraInfo.
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
 
   // Create publishers for raw, compressed images, and camera info

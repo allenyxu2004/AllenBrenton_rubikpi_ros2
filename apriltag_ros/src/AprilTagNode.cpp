@@ -103,7 +103,11 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
         this->get_node_topics_interface()->resolve_topic_name("image_rect"),
         std::bind(&AprilTagNode::onCamera, this, std::placeholders::_1, std::placeholders::_2),
         declare_parameter("image_transport", "raw", descr({}, true)),
-        rmw_qos_profile_sensor_data)),
+        // Match this repository's reliable camera publisher. Best-effort
+        // delivery can lose large image samples while CameraInfo still arrives.
+        declare_parameter("reliable_camera_qos", true,
+                          descr("use reliable camera delivery; disable for best-effort cameras", true))
+            ? rmw_qos_profile_default : rmw_qos_profile_sensor_data)),
     pub_detections(create_publisher<apriltag_msgs::msg::AprilTagDetectionArray>("detections", rclcpp::QoS(1))),
     tf_broadcaster(this)
 {
