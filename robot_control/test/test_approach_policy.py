@@ -104,6 +104,22 @@ class ApproachPolicyTest(unittest.TestCase):
         self.assertTrue(0 < left <= 0.15 and 0 < right <= 0.15)
         self.assertEqual(policy.step(0.2, 1., 0., True), (0., 0.))
 
+    def test_hw1_pivots_are_pulsed_and_stop_on_arrival(self):
+        for sign in [-1, 1]:
+            policy = ApproachPolicy(use_hw1_turns=True)
+            expected = (0.45, -0.3) if sign > 0 else (-0.45, 0.3)
+            bearing = sign * math.radians(15)
+            self.assertEqual(policy.step(0, 2., bearing, True), expected)
+            self.assertEqual(policy.step(0.15, 2., bearing, True), (0., 0.))
+            self.assertEqual(policy.step(0.3, 2., bearing, True), (0., 0.))
+            self.assertEqual(policy.step(0.36, 2., bearing, True), expected)
+            self.assertEqual(policy.step(0.4, 1., bearing, True), (0., 0.))
+
+    def test_hw1_pivot_stops_on_tracking_loss(self):
+        policy = ApproachPolicy(use_hw1_turns=True)
+        policy.step(0, 2., math.radians(15), True)
+        self.assertEqual(policy.step(0.05, fresh=False), (0., 0.))
+
     def test_bad_configuration(self):
         for kw in [{'max_command': 0.5}, {'target_distance': -1},
                    {'max_duration': math.nan}, {'drive_seconds': 0},
