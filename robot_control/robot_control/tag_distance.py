@@ -43,8 +43,11 @@ class TagDistance(Node):
             self.publishers_by_frame[frame].publish(Float64(data=distance))
             self.last_seen[frame] = now
             if now - self.last_logged.get(frame, -math.inf) >= 1.0:
+                # Optical camera axes: x right, z forward.
+                bearing_deg = math.degrees(math.atan2(position.x, position.z))
                 self.get_logger().info(
                     f'{frame}: camera-to-tag distance = {distance:.3f} m '
+                    f'| bearing = {bearing_deg:+.1f} deg (positive = right) '
                     f'(forward depth = {position.z:.3f} m)')
                 self.last_logged[frame] = now
 
