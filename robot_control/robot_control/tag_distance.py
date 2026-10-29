@@ -1,4 +1,4 @@
-"""Report camera-to-tag range from fresh AprilTag transforms, in metres."""
+"""Report robot-centre-to-tag range from fresh AprilTag transforms, in metres."""
 
 import math
 import time
@@ -8,6 +8,11 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float64
 from tf2_msgs.msg import TFMessage
+
+
+# Camera faces forward, 3.5 inches ahead of the robot centre.
+# Assume zero lateral/vertical offset and no camera mounting rotation.
+CAMERA_OFFSET_FROM_ROBOT_CENTER_M = 3.5 * 0.0254  # 0.0889 m
 
 
 class TagDistance(Node):
@@ -29,7 +34,7 @@ class TagDistance(Node):
         self.timer = self.create_timer(0.2, self.expire)
 
     def on_transforms(self, message):
-        """Compute Euclidean range from each direct camera-to-tag transform."""
+        """Translate camera measurements to the robot centre before reporting."""
         now = time.monotonic()
         for transform in message.transforms:
             frame = transform.child_frame_id
@@ -37,18 +42,19 @@ class TagDistance(Node):
                     or frame not in self.publishers_by_frame):
                 continue
             position = transform.transform.translation
-            distance = math.hypot(position.x, position.y, position.z)
+            forward_depth = position.z + CAMERA_OFFSET_FROM_ROBOT_CENTER_M
+            distance = math.hypot(position.x, position.y, forward_depth)
             if not math.isfinite(distance):
                 continue
             self.publishers_by_frame[frame].publish(Float64(data=distance))
             self.last_seen[frame] = now
             if now - self.last_logged.get(frame, -math.inf) >= 1.0:
                 # Optical camera axes: x right, z forward.
-                bearing_deg = math.degrees(math.atan2(position.x, position.z))
+                bearing_deg = math.degrees(math.atan2(position.x, forward_depth))
                 self.get_logger().info(
-                    f'{frame}: camera-to-tag distance = {distance:.3f} m '
+                    f'{frame}: robot-centre-to-tag distance = {distance:.3f} m '
                     f'| bearing = {bearing_deg:+.1f} deg (positive = right) '
-                    f'(forward depth = {position.z:.3f} m)')
+                    f'(forward depth = {forward_depth:.3f} m)')
                 self.last_logged[frame] = now
 
     def expire(self):
