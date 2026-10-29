@@ -44,9 +44,23 @@ class ApproachPolicyTest(unittest.TestCase):
         policy.step(0, 1.5, 0., True)
         self.assertEqual(policy.step(2, 1.5, 0., True), (0., 0.))
 
+    def test_deadband_floor_preserves_steering_and_stop(self):
+        for bearing in [-0.1, 0., 0.1]:
+            policy = ApproachPolicy(max_command=0.15, min_command=0.08)
+            left, right = policy.step(0, 1.01, bearing, True)
+            self.assertTrue(0.08 <= left <= 0.15 and 0.08 <= right <= 0.15)
+            self.assertAlmostEqual((left - right) * bearing, abs((left - right) * bearing))
+            self.assertEqual(policy.step(1, 1.0, bearing, True), (0., 0.))
+
+    def test_requested_command_limit(self):
+        left, right = ApproachPolicy(max_command=0.3, min_command=0.08).step(
+            0, 3., 0.1, True)
+        self.assertTrue(0.08 <= right < left <= 0.3)
+
     def test_bad_configuration(self):
         for kw in [{'max_command': 0.5}, {'target_distance': -1},
-                   {'max_duration': math.nan}]:
+                   {'max_duration': math.nan}, {'min_command': -0.01},
+                   {'min_command': 0.08, 'max_command': 0.08}]:
             with self.assertRaises(ValueError):
                 ApproachPolicy(**kw)
 

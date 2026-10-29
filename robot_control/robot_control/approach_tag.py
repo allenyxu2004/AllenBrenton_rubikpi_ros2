@@ -17,13 +17,15 @@ class ApproachTag(Node):
     def __init__(self):
         super().__init__('approach_tag')
         for name, default in [('tag_frame', 'tag_0'), ('target_distance', 1.0),
-                              ('max_command', 0.08), ('max_duration', 20.0)]:
+                              ('max_command', 0.08), ('max_duration', 20.0),
+                              ('min_command', 0.0)]:
             self.declare_parameter(name, default)
         self.tag_frame = self.get_parameter('tag_frame').value
         self.policy = ApproachPolicy(
             self.get_parameter('target_distance').value,
             self.get_parameter('max_command').value,
-            self.get_parameter('max_duration').value)
+            self.get_parameter('max_duration').value,
+            min_command=self.get_parameter('min_command').value)
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.measurement = None
         self.last_received = None
