@@ -18,14 +18,17 @@ class ApproachTag(Node):
         super().__init__('approach_tag')
         for name, default in [('tag_frame', 'tag_0'), ('target_distance', 1.0),
                               ('max_command', 0.08), ('max_duration', 20.0),
-                              ('min_command', 0.0)]:
+                              ('min_command', 0.0), ('drive_seconds', 3.5),
+                              ('pause_seconds', 0.3)]:
             self.declare_parameter(name, default)
         self.tag_frame = self.get_parameter('tag_frame').value
         self.policy = ApproachPolicy(
             self.get_parameter('target_distance').value,
             self.get_parameter('max_command').value,
             self.get_parameter('max_duration').value,
-            min_command=self.get_parameter('min_command').value)
+            min_command=self.get_parameter('min_command').value,
+            drive_seconds=self.get_parameter('drive_seconds').value,
+            pause_seconds=self.get_parameter('pause_seconds').value)
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.measurement = None
         self.last_received = None
@@ -70,15 +73,19 @@ class ApproachTag(Node):
         fresh = (self.last_received is not None
                  and now - self.last_received <= 0.3 and 0 <= source_age <= 0.3)
         distance, bearing = self.measurement or (None, None)
+        was_paused = self.policy.paused
         left, right = self.policy.step(now, distance, bearing, fresh)
         self.command_pub.publish(Float32MultiArray(data=[left, right]))
+        if self.policy.paused != was_paused and not self.policy.reason:
+            self.get_logger().info('Interval pause' if self.policy.paused else 'Interval resumed')
         if self.policy.reason and not self.reported_stop:
             self.get_logger().info(f'STOP: {self.policy.reason}')
             self.reported_stop = True
         elif fresh and not self.policy.reason and now - self.last_log >= 1.0:
             self.get_logger().info(
                 f'range={distance:.3f} m bearing={math.degrees(bearing):+.1f} deg '
-                f'L={left:.3f} R={right:.3f}')
+                f'L={left:.3f} R={right:.3f} '
+                f'state={"PAUSE" if self.policy.paused else "DRIVE"}')
             self.last_log = now
 
 

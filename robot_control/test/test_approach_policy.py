@@ -57,9 +57,31 @@ class ApproachPolicyTest(unittest.TestCase):
             0, 3., 0.1, True)
         self.assertTrue(0.08 <= right < left <= 0.3)
 
+    def test_interval_pause_and_resume(self):
+        policy = ApproachPolicy(min_command=0.08, max_command=0.15)
+        self.assertGreater(policy.step(0, 2., 0., True)[0], 0)
+        self.assertEqual(policy.step(3.5, 2., 0., True), (0., 0.))
+        self.assertEqual(policy.step(3.7, 2., 0., True), (0., 0.))
+        self.assertGreater(policy.step(3.81, 2., 0., True)[0], 0)
+
+    def test_delayed_tick_does_not_skip_pause(self):
+        policy = ApproachPolicy()
+        policy.step(0, 2., 0., True)
+        self.assertEqual(policy.step(5, 2., 0., True), (0., 0.))
+        self.assertEqual(policy.step(5.2, 2., 0., True), (0., 0.))
+
+    def test_arrival_or_loss_during_pause_never_resumes(self):
+        for fresh, distance in [(True, 0.99), (False, 2.)]:
+            policy = ApproachPolicy()
+            policy.step(0, 2., 0., True)
+            policy.step(3.5, 2., 0., True)
+            self.assertEqual(policy.step(3.6, distance, 0., fresh), (0., 0.))
+            self.assertEqual(policy.step(4, 2., 0., True), (0., 0.))
+
     def test_bad_configuration(self):
         for kw in [{'max_command': 0.5}, {'target_distance': -1},
-                   {'max_duration': math.nan}, {'min_command': -0.01},
+                   {'max_duration': math.nan}, {'drive_seconds': 0},
+                   {'pause_seconds': -1}, {'min_command': -0.01},
                    {'min_command': 0.08, 'max_command': 0.08}]:
             with self.assertRaises(ValueError):
                 ApproachPolicy(**kw)

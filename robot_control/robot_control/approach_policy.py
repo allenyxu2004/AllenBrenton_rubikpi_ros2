@@ -7,18 +7,25 @@ class ApproachPolicy:
     """Latch a stop on arrival, tracking failure, or the test time limit."""
 
     def __init__(self, target_distance=1.0, max_command=0.08, max_duration=20.0,
-                 min_command=0.0):
+                 min_command=0.0, drive_seconds=3.5, pause_seconds=0.3):
         if not all(math.isfinite(v) for v in
-                   (target_distance, max_command, max_duration, min_command)):
+                   (target_distance, max_command, max_duration, min_command,
+                    drive_seconds, pause_seconds)):
             raise ValueError('Approach parameters must be finite')
         if (target_distance <= 0 or not 0 <= min_command < max_command <= 0.3
-                or max_duration <= 0):
+                or max_duration <= 0 or drive_seconds <= 0 or pause_seconds < 0):
             raise ValueError(
-                'Require target > 0, 0 <= min_command < max_command <= 0.3, duration > 0')
+                'Require target/duration/drive_seconds > 0, pause_seconds >= 0, '
+                '0 <= min_command < max_command <= 0.3')
         self.target = target_distance
         self.max_command = max_command
         self.max_duration = max_duration
         self.min_command = min_command
+        self.drive_seconds = drive_seconds
+        self.pause_seconds = pause_seconds
+        self.segment_started_at = None
+        self.pause_started_at = None
+        self.paused = False
         self.started_at = None
         self.tracking = False
         self.reason = None
@@ -46,6 +53,19 @@ class ApproachPolicy:
             return self.stop('Target distance reached')
         if abs(bearing) > math.radians(20):
             return self.stop('Tag more than 20 degrees off centre')
+        # Use actual transition times so a delayed callback cannot skip a pause.
+        if self.segment_started_at is None:
+            self.segment_started_at = now
+        if self.paused:
+            if now - self.pause_started_at < self.pause_seconds:
+                return 0.0, 0.0
+            self.paused = False
+            self.segment_started_at = now
+        elif (self.pause_seconds > 0
+              and now - self.segment_started_at >= self.drive_seconds):
+            self.paused = True
+            self.pause_started_at = now
+            return 0.0, 0.0
         # Firmware units are uncalibrated: these are wheel commands, not m/s.
         headroom = self.max_command - self.min_command
         forward = min(headroom, 0.25 * (distance - self.target))
