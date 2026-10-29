@@ -10,6 +10,7 @@ from std_msgs.msg import Float32MultiArray
 from tf2_msgs.msg import TFMessage
 
 from robot_control.approach_policy import ApproachPolicy
+from robot_control.square_approach import SquareApproachPolicy
 from robot_control.tag_distance import CAMERA_OFFSET_FROM_ROBOT_CENTER_M
 
 
@@ -20,10 +21,13 @@ class ApproachTag(Node):
                               ('max_command', 0.08), ('max_duration', 20.0),
                               ('min_command', 0.0), ('drive_seconds', 3.5),
                               ('pause_seconds', 0.3), ('pivot_command', 0.2),
-                              ('use_hw1_turns', True), ('stop_margin', 0.05)]:
+                              ('use_hw1_turns', True), ('stop_margin', 0.05),
+                              ('square_to_tag', False)]:
             self.declare_parameter(name, default)
         self.tag_frame = self.get_parameter('tag_frame').value
-        self.policy = ApproachPolicy(
+        self.square_to_tag = self.get_parameter('square_to_tag').value
+        policy_type = SquareApproachPolicy if self.square_to_tag else ApproachPolicy
+        self.policy = policy_type(
             self.get_parameter('target_distance').value,
             self.get_parameter('max_command').value,
             self.get_parameter('max_duration').value,
@@ -43,10 +47,13 @@ class ApproachTag(Node):
         self.reported_stop = False
         self.reported_aligning = False
         self.last_log = -math.inf
+        if self.square_to_tag:
+            self.get_logger().info(
+                'Square-on mode: target is planar standoff along tag normal; '
+                '8 cm position / 3 deg heading tolerance. Scalar stop margin is not applied.')
         self.get_logger().info(
             f'Approach armed for {self.tag_frame}; target {self.policy.target:.2f} m '
-            f'from robot centre; command stop at '
-            f'{self.policy.target + self.policy.stop_margin:.2f} m. '
+            'from robot centre. '
             'Waiting for fresh tag pose.')
 
     def on_tf(self, message):
@@ -67,6 +74,13 @@ class ApproachTag(Node):
             if not all(math.isfinite(v) for v in (p.x, p.y, p.z)) or p.z <= 0:
                 self.policy.stop('Invalid tag position')
                 continue
+            if self.square_to_tag:
+                q = tf.transform.rotation
+                try:
+                    self.policy.update_goal(p.x, forward, (q.x, q.y, q.z, q.w))
+                except ValueError as error:
+                    self.policy.stop(str(error))
+                    continue
             self.measurement = (distance, bearing)
             self.source_stamp = stamp
             self.last_received = time.monotonic()
@@ -95,7 +109,10 @@ class ApproachTag(Node):
         elif fresh and not self.policy.reason and now - self.last_log >= 1.0:
             self.get_logger().info(
                 f'range={distance:.3f} m bearing={math.degrees(bearing):+.1f} deg '
-                f'L={left:.3f} R={right:.3f} '
+                f'L={left:.3f} R={right:.3f} ' +
+                (f'goal_error={math.hypot(*self.policy.goal[:2]):.3f} m '
+                 f'square_heading={math.degrees(self.policy.goal[2]):+.1f} deg '
+                 f'phase={self.policy.phase} ' if self.square_to_tag else '') +
                 f'state={"PAUSE" if self.policy.paused else "ALIGN" if self.policy.aligning else "DRIVE"}')
             self.last_log = now
 
