@@ -13,16 +13,20 @@ class ApproachPolicy:
 
     def __init__(self, target_distance=1.0, max_command=0.08, max_duration=20.0,
                  min_command=0.0, drive_seconds=3.5, pause_seconds=0.3,
-                 pivot_command=0.2, use_hw1_turns=False, stop_margin=0.05):
+                 pivot_command=0.2, use_hw1_turns=False, stop_margin=0.05,
+                 loss_grace_seconds=0.0):
         if not all(math.isfinite(v) for v in
                    (target_distance, max_command, max_duration, min_command,
-                    drive_seconds, pause_seconds, pivot_command, stop_margin)):
+                    drive_seconds, pause_seconds, pivot_command, stop_margin,
+                    loss_grace_seconds)):
             raise ValueError('Approach parameters must be finite')
         if (target_distance <= 0 or not 0 <= min_command < max_command <= 0.3
                 or max_duration <= 0 or drive_seconds <= 0 or pause_seconds < 0
-                or not 0 < pivot_command <= 0.3 or not 0 <= stop_margin <= 0.3):
+                or not 0 < pivot_command <= 0.3 or not 0 <= stop_margin <= 0.3
+                or loss_grace_seconds < 0):
             raise ValueError(
-                'Require target/duration/drive_seconds > 0, pause_seconds >= 0, '
+                'Require target/duration/drive_seconds > 0, '
+                'pause_seconds/loss_grace_seconds >= 0, '
                 '0 <= min_command < max_command <= 0.3, 0 < pivot_command <= 0.3, '
                 '0 <= stop_margin <= 0.3')
         self.target = target_distance
@@ -31,6 +35,8 @@ class ApproachPolicy:
         self.max_duration = max_duration
         self.min_command = min_command
         self.use_hw1_turns = use_hw1_turns
+        self.loss_grace_seconds = loss_grace_seconds
+        self.lost_since = None
         self.pivot_started_at = None
         self.pivot_duration = 0.0
         self.pivot_pause_until = 0.0
@@ -60,8 +66,13 @@ class ApproachPolicy:
             return self.stop('Test time limit reached')
         if not fresh:
             if self.tracking:
-                return self.stop('Tag lost or stale; restart controller to retry')
+                if self.lost_since is None:
+                    self.lost_since = now
+                self.pivot_started_at = None
+                if now - self.lost_since >= self.loss_grace_seconds:
+                    return self.stop('Tag lost or stale; restart controller to retry')
             return 0.0, 0.0
+        self.lost_since = None
         if not all(v is not None and math.isfinite(v) for v in (distance, bearing)):
             return self.stop('Invalid tag pose')
         self.tracking = True
@@ -107,7 +118,7 @@ class ApproachPolicy:
                 self.pivot_started_at = now
                 self.pivot_direction = direction
             return ((RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT) if direction > 0
-                    else (LEFT_TURN_LEFT, LEFT_TURN_RIGHT))
+                     else (LEFT_TURN_LEFT, LEFT_TURN_RIGHT))
         if not self.aligning:
             self.pivot_started_at = None
             self.pivot_pause_until = 0.0

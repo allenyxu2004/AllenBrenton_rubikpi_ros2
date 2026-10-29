@@ -47,6 +47,7 @@ class SquareApproachPolicy(ApproachPolicy):
         if self.reason is not None:
             return 0., 0.
         if not fresh or self.goal is None:
+            self.settled_since = None
             return super().step(now, distance, bearing, False)
         if bearing is None or not math.isfinite(bearing) or abs(bearing) > math.radians(20):
             return self.stop('Tag more than 20 degrees off centre or invalid bearing')

@@ -4,6 +4,10 @@ import math
 import unittest
 
 from robot_control.approach_policy import ApproachPolicy
+from robot_control.kinematic_control import (
+    LEFT_TURN_LEFT, LEFT_TURN_RIGHT,
+    RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT,
+)
 
 
 class ApproachPolicyTest(unittest.TestCase):
@@ -32,6 +36,18 @@ class ApproachPolicyTest(unittest.TestCase):
         policy.step(0, 1.5, 0., True)
         self.assertEqual(policy.step(1), (0., 0.))
         self.assertEqual(policy.step(2, 1.5, 0., True), (0., 0.))
+
+    def test_loss_grace_period_pauses_then_recovers_or_latches(self):
+        policy = ApproachPolicy(loss_grace_seconds=1.0)
+        self.assertGreater(policy.step(0, 1.5, 0., True)[0], 0)
+        self.assertEqual(policy.step(0.2, fresh=False), (0., 0.))
+        self.assertIsNone(policy.reason)
+        self.assertGreater(policy.step(0.6, 1.5, 0., True)[0], 0)
+        self.assertEqual(policy.step(1.0, fresh=False), (0., 0.))
+        self.assertIsNone(policy.reason)
+        self.assertEqual(policy.step(2.0, fresh=False), (0., 0.))
+        self.assertIn('lost', policy.reason)
+        self.assertEqual(policy.step(2.1, 1.5, 0., True), (0., 0.))
 
     def test_excessive_bearing_and_invalid_pose(self):
         for distance, bearing in [(1.5, math.radians(21)), (math.nan, 0.)]:
@@ -107,7 +123,7 @@ class ApproachPolicyTest(unittest.TestCase):
     def test_hw1_pivots_are_pulsed_and_stop_on_arrival(self):
         for sign in [-1, 1]:
             policy = ApproachPolicy(use_hw1_turns=True)
-            expected = (0.45, -0.3) if sign > 0 else (-0.45, 0.3)
+            expected = (RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT) if sign > 0 else (LEFT_TURN_LEFT, LEFT_TURN_RIGHT)
             bearing = sign * math.radians(15)
             self.assertEqual(policy.step(0, 2., bearing, True), expected)
             self.assertEqual(policy.step(0.15, 2., bearing, True), (0., 0.))
@@ -134,7 +150,8 @@ class ApproachPolicyTest(unittest.TestCase):
                    {'pause_seconds': -1}, {'pivot_command': 0.31},
                    {'pivot_command': 0}, {'stop_margin': -0.01},
                    {'stop_margin': math.nan}, {'min_command': -0.01},
-                   {'min_command': 0.08, 'max_command': 0.08}]:
+                   {'min_command': 0.08, 'max_command': 0.08},
+                   {'loss_grace_seconds': -0.1}, {'loss_grace_seconds': math.nan}]:
             with self.assertRaises(ValueError):
                 ApproachPolicy(**kw)
 

@@ -22,10 +22,14 @@ class ApproachTag(Node):
                               ('min_command', 0.0), ('drive_seconds', 3.5),
                               ('pause_seconds', 0.3), ('pivot_command', 0.2),
                               ('use_hw1_turns', True), ('stop_margin', 0.05),
-                              ('square_to_tag', False)]:
+                              ('square_to_tag', False), ('pose_timeout', 0.6),
+                              ('loss_grace_seconds', 1.5)]:
             self.declare_parameter(name, default)
         self.tag_frame = self.get_parameter('tag_frame').value
         self.square_to_tag = self.get_parameter('square_to_tag').value
+        self.pose_timeout = self.get_parameter('pose_timeout').value
+        if not math.isfinite(self.pose_timeout) or self.pose_timeout <= 0:
+            raise ValueError('pose_timeout must be finite and > 0')
         policy_type = SquareApproachPolicy if self.square_to_tag else ApproachPolicy
         self.policy = policy_type(
             self.get_parameter('target_distance').value,
@@ -36,7 +40,8 @@ class ApproachTag(Node):
             pause_seconds=self.get_parameter('pause_seconds').value,
             pivot_command=self.get_parameter('pivot_command').value,
             use_hw1_turns=self.get_parameter('use_hw1_turns').value,
-            stop_margin=self.get_parameter('stop_margin').value)
+            stop_margin=self.get_parameter('stop_margin').value,
+            loss_grace_seconds=self.get_parameter('loss_grace_seconds').value)
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.measurement = None
         self.last_received = None
@@ -62,7 +67,7 @@ class ApproachTag(Node):
                 continue
             stamp = tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9
             age = self.get_clock().now().nanoseconds * 1e-9 - stamp
-            if not 0 <= age <= 0.3:
+            if not 0 <= age <= self.pose_timeout:
                 continue
             # Do not let repeated or out-of-order poses refresh the timeout.
             if self.source_stamp is not None and stamp <= self.source_stamp:
@@ -92,7 +97,8 @@ class ApproachTag(Node):
         source_age = (self.get_clock().now().nanoseconds * 1e-9 - self.source_stamp
                       if self.source_stamp is not None else math.inf)
         fresh = (self.last_received is not None
-                 and now - self.last_received <= 0.3 and 0 <= source_age <= 0.3)
+                 and now - self.last_received <= self.pose_timeout
+                 and 0 <= source_age <= self.pose_timeout)
         distance, bearing = self.measurement or (None, None)
         was_paused = self.policy.paused
         left, right = self.policy.step(now, distance, bearing, fresh)
