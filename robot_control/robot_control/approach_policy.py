@@ -1,4 +1,4 @@
-"""Bounded wheel commands for a short, forward-only tag approach."""
+"""Bounded wheel commands for a short tag approach with in-place alignment."""
 
 import math
 
@@ -26,6 +26,7 @@ class ApproachPolicy:
         self.segment_started_at = None
         self.pause_started_at = None
         self.paused = False
+        self.aligning = False
         self.started_at = None
         self.tracking = False
         self.reason = None
@@ -66,6 +67,16 @@ class ApproachPolicy:
             self.paused = True
             self.pause_started_at = now
             return 0.0, 0.0
+        # Align before translating when lateral error is substantial. Hysteresis
+        # prevents repeated mode switching at one bearing threshold.
+        if abs(bearing) >= math.radians(8):
+            self.aligning = True
+        elif abs(bearing) <= math.radians(3):
+            self.aligning = False
+        if self.aligning:
+            # Optical bearing positive = tag right = clockwise pivot.
+            turn = math.copysign(self.max_command, bearing)
+            return turn, -turn
         # Firmware units are uncalibrated: these are wheel commands, not m/s.
         headroom = self.max_command - self.min_command
         forward = min(headroom, 0.25 * (distance - self.target))

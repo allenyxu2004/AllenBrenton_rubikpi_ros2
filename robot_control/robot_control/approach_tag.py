@@ -37,6 +37,7 @@ class ApproachTag(Node):
             TFMessage, '/tf', self.on_tf, qos_profile_sensor_data)
         self.timer = self.create_timer(0.05, self.tick)
         self.reported_stop = False
+        self.reported_aligning = False
         self.last_log = -math.inf
         self.get_logger().info(
             f'Approach armed for {self.tag_frame}; target {self.policy.target:.2f} m '
@@ -78,6 +79,10 @@ class ApproachTag(Node):
         self.command_pub.publish(Float32MultiArray(data=[left, right]))
         if self.policy.paused != was_paused and not self.policy.reason:
             self.get_logger().info('Interval pause' if self.policy.paused else 'Interval resumed')
+        if self.policy.aligning != self.reported_aligning and not self.policy.reason:
+            self.get_logger().info(
+                'Aligning in place' if self.policy.aligning else 'Aligned; approaching')
+            self.reported_aligning = self.policy.aligning
         if self.policy.reason and not self.reported_stop:
             self.get_logger().info(f'STOP: {self.policy.reason}')
             self.reported_stop = True
@@ -85,7 +90,7 @@ class ApproachTag(Node):
             self.get_logger().info(
                 f'range={distance:.3f} m bearing={math.degrees(bearing):+.1f} deg '
                 f'L={left:.3f} R={right:.3f} '
-                f'state={"PAUSE" if self.policy.paused else "DRIVE"}')
+                f'state={"PAUSE" if self.policy.paused else "ALIGN" if self.policy.aligning else "DRIVE"}')
             self.last_log = now
 
 

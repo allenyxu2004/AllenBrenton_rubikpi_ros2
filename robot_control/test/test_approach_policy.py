@@ -78,6 +78,25 @@ class ApproachPolicyTest(unittest.TestCase):
             self.assertEqual(policy.step(3.6, distance, 0., fresh), (0., 0.))
             self.assertEqual(policy.step(4, 2., 0., True), (0., 0.))
 
+    def test_large_bearing_aligns_in_place_both_directions(self):
+        for sign in [-1, 1]:
+            policy = ApproachPolicy(max_command=0.15, min_command=0.08)
+            left, right = policy.step(0, 1.8, sign * math.radians(15), True)
+            self.assertEqual((left, right), (sign * 0.15, -sign * 0.15))
+            self.assertTrue(policy.aligning)
+            policy.step(0.1, 1.8, sign * math.radians(5), True)
+            self.assertTrue(policy.aligning)
+            left, right = policy.step(0.2, 1.8, sign * math.radians(2), True)
+            self.assertFalse(policy.aligning)
+            self.assertGreater(min(left, right), 0)
+
+    def test_alignment_respects_pause_and_tracking_stop(self):
+        policy = ApproachPolicy()
+        policy.step(0, 1.8, math.radians(15), True)
+        self.assertEqual(policy.step(3.5, 1.8, math.radians(15), True), (0., 0.))
+        self.assertEqual(policy.step(3.6, fresh=False), (0., 0.))
+        self.assertEqual(policy.step(4., 1.8, 0., True), (0., 0.))
+
     def test_bad_configuration(self):
         for kw in [{'max_command': 0.5}, {'target_distance': -1},
                    {'max_duration': math.nan}, {'drive_seconds': 0},
