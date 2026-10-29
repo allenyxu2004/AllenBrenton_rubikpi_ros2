@@ -10,7 +10,8 @@ class RoutePolicy:
 
     def __init__(self, target_distance=0.5, max_command=0.08,
                  alignment_tolerance=3.0, search_timeout=30.0,
-                 approach_timeout=60.0, loss_grace=1.5):
+                 approach_timeout=60.0, loss_grace=1.5,
+                 drive_seconds=3.5, pause_seconds=0.3):
         values = (target_distance, max_command, alignment_tolerance,
                   search_timeout, approach_timeout, loss_grace)
         if not all(math.isfinite(v) and v > 0 for v in values):
@@ -29,7 +30,30 @@ class RoutePolicy:
         self.lost = None
         self.seen = False
         self.pause_until = 0
-        self.policy = None
+        self.drive_seconds = drive_seconds
+        self.pause_seconds = pause_seconds
+        self.policy = self._motion_policy()
+        self.search_pulse = None
+        self.search_pause_until = 0.
+
+    def _motion_policy(self):
+        return ApproachPolicy(
+            target_distance=self.target_distance, max_command=self.max_command,
+            max_duration=self.approach_timeout, drive_seconds=self.drive_seconds,
+            pause_seconds=self.pause_seconds, use_hw1_turns=True,
+            stop_margin=0.0, loss_grace_seconds=self.loss_grace)
+
+    def _search(self, now):
+        if self.search_pulse is not None:
+            if now-self.search_pulse >= 0.1:
+                self.search_pulse = None
+                self.search_pause_until = now+0.2
+                return 0., 0.
+            return LEFT_TURN_LEFT, LEFT_TURN_RIGHT
+        if now < self.search_pause_until:
+            return 0., 0.
+        self.search_pulse = now
+        return LEFT_TURN_LEFT, LEFT_TURN_RIGHT
 
     @property
     def target(self):
@@ -55,31 +79,36 @@ class RoutePolicy:
             return self.stop('Invalid pose')
         if not fresh:
             self.settled = None
+            self.policy.pivot_started_at = None
             if self.seen:
                 self.lost = now if self.lost is None else self.lost
                 if now-self.lost >= self.loss_grace:
                     return self.stop('Target lost')
                 return 0., 0.
             self.state = 'WAIT' if self.index == 0 else 'SEARCH'
-            return ((LEFT_TURN_LEFT, LEFT_TURN_RIGHT)
-                    if self.index and (now-self.started) % 0.3 < 0.1 else (0., 0.))
+            return self._search(now) if self.index else (0., 0.)
         self.seen = True
         self.lost = None
         if abs(bearing) > self.tolerance:
             self.settled = None
             self.state = 'CENTER'
-            if (now-self.started) % 0.3 >= 0.1:
-                return 0., 0.
-            from robot_control.kinematic_control import RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT
-            return ((RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT) if bearing > 0
-                    else (LEFT_TURN_LEFT, LEFT_TURN_RIGHT))
+            self.policy.aligning = True
+            command = self.policy.step(
+                now, self.target_distance+1., bearing, True)
+            if self.policy.reason:
+                return self.stop(self.policy.reason)
+            return command
         if kind == 'approach' and distance > self.target_distance:
             self.state = 'APPROACH'
-            speed = min(self.max_command, 0.25*(distance-self.target_distance))
-            turn = max(-speed*0.3, min(speed*0.3, 0.12*bearing))
-            left, right = (speed+turn)*FORWARD_LEFT/FORWARD_RIGHT, speed-turn
-            scale = min(1., self.max_command/max(left, right))
-            return left*scale, right*scale
+            command = self.policy.step(now, distance, bearing, True)
+            if self.policy.reason:
+                return self.stop(self.policy.reason)
+            left, right = command
+            if left > 0 and right > 0:
+                left *= FORWARD_LEFT/FORWARD_RIGHT
+                scale = min(1., self.max_command/max(left, right))
+                left, right = left*scale, right*scale
+            return left, right
         self.state = 'SETTLE'
         self.settled = now if self.settled is None else self.settled
         if now-self.settled >= 0.5:
@@ -90,5 +119,8 @@ class RoutePolicy:
                 self.started = None
                 self.seen = False
                 self.settled = None
-                self.pause_until = now+0.3
+                self.pause_until = now+self.pause_seconds
+                self.policy = self._motion_policy()
+                self.search_pulse = None
+                self.search_pause_until = 0.
         return 0., 0.

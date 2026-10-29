@@ -15,7 +15,8 @@ class TagRoute(Node):
         super().__init__('tag_route')
         defaults = dict(target_distance=0.5, max_command=0.08,
                         alignment_tolerance=3.0, search_timeout=30.0,
-                        approach_timeout=60.0, loss_grace=1.5)
+                        approach_timeout=60.0, loss_grace=1.5,
+                        drive_seconds=3.5, pause_seconds=0.3)
         for key, value in defaults.items():
             self.declare_parameter(key, value)
         self.policy = RoutePolicy(**{k: self.get_parameter(k).value for k in defaults})
