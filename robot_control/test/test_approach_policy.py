@@ -82,7 +82,7 @@ class ApproachPolicyTest(unittest.TestCase):
         for sign in [-1, 1]:
             policy = ApproachPolicy(max_command=0.15, min_command=0.08)
             left, right = policy.step(0, 1.8, sign * math.radians(15), True)
-            self.assertEqual((left, right), (sign * 0.15, -sign * 0.15))
+            self.assertEqual((left, right), (sign * 0.2, -sign * 0.2))
             self.assertTrue(policy.aligning)
             policy.step(0.1, 1.8, sign * math.radians(5), True)
             self.assertTrue(policy.aligning)
@@ -97,10 +97,18 @@ class ApproachPolicyTest(unittest.TestCase):
         self.assertEqual(policy.step(3.6, fresh=False), (0., 0.))
         self.assertEqual(policy.step(4., 1.8, 0., True), (0., 0.))
 
+    def test_pivot_strength_independent_of_forward_speed(self):
+        policy = ApproachPolicy(max_command=0.15, pivot_command=0.25)
+        self.assertEqual(policy.step(0, 2., math.radians(10), True), (0.25, -0.25))
+        left, right = policy.step(0.1, 2., 0., True)
+        self.assertTrue(0 < left <= 0.15 and 0 < right <= 0.15)
+        self.assertEqual(policy.step(0.2, 1., 0., True), (0., 0.))
+
     def test_bad_configuration(self):
         for kw in [{'max_command': 0.5}, {'target_distance': -1},
                    {'max_duration': math.nan}, {'drive_seconds': 0},
-                   {'pause_seconds': -1}, {'min_command': -0.01},
+                   {'pause_seconds': -1}, {'pivot_command': 0.31},
+                   {'pivot_command': 0}, {'min_command': -0.01},
                    {'min_command': 0.08, 'max_command': 0.08}]:
             with self.assertRaises(ValueError):
                 ApproachPolicy(**kw)

@@ -19,7 +19,7 @@ class ApproachTag(Node):
         for name, default in [('tag_frame', 'tag_0'), ('target_distance', 1.0),
                               ('max_command', 0.08), ('max_duration', 20.0),
                               ('min_command', 0.0), ('drive_seconds', 3.5),
-                              ('pause_seconds', 0.3)]:
+                              ('pause_seconds', 0.3), ('pivot_command', 0.2)]:
             self.declare_parameter(name, default)
         self.tag_frame = self.get_parameter('tag_frame').value
         self.policy = ApproachPolicy(
@@ -28,7 +28,8 @@ class ApproachTag(Node):
             self.get_parameter('max_duration').value,
             min_command=self.get_parameter('min_command').value,
             drive_seconds=self.get_parameter('drive_seconds').value,
-            pause_seconds=self.get_parameter('pause_seconds').value)
+            pause_seconds=self.get_parameter('pause_seconds').value,
+            pivot_command=self.get_parameter('pivot_command').value)
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.measurement = None
         self.last_received = None

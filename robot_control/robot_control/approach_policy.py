@@ -7,20 +7,23 @@ class ApproachPolicy:
     """Latch a stop on arrival, tracking failure, or the test time limit."""
 
     def __init__(self, target_distance=1.0, max_command=0.08, max_duration=20.0,
-                 min_command=0.0, drive_seconds=3.5, pause_seconds=0.3):
+                 min_command=0.0, drive_seconds=3.5, pause_seconds=0.3,
+                 pivot_command=0.2):
         if not all(math.isfinite(v) for v in
                    (target_distance, max_command, max_duration, min_command,
-                    drive_seconds, pause_seconds)):
+                    drive_seconds, pause_seconds, pivot_command)):
             raise ValueError('Approach parameters must be finite')
         if (target_distance <= 0 or not 0 <= min_command < max_command <= 0.3
-                or max_duration <= 0 or drive_seconds <= 0 or pause_seconds < 0):
+                or max_duration <= 0 or drive_seconds <= 0 or pause_seconds < 0
+                or not 0 < pivot_command <= 0.3):
             raise ValueError(
                 'Require target/duration/drive_seconds > 0, pause_seconds >= 0, '
-                '0 <= min_command < max_command <= 0.3')
+                '0 <= min_command < max_command <= 0.3, 0 < pivot_command <= 0.3')
         self.target = target_distance
         self.max_command = max_command
         self.max_duration = max_duration
         self.min_command = min_command
+        self.pivot_command = pivot_command
         self.drive_seconds = drive_seconds
         self.pause_seconds = pause_seconds
         self.segment_started_at = None
@@ -75,7 +78,7 @@ class ApproachPolicy:
             self.aligning = False
         if self.aligning:
             # Optical bearing positive = tag right = clockwise pivot.
-            turn = math.copysign(self.max_command, bearing)
+            turn = math.copysign(self.pivot_command, bearing)
             return turn, -turn
         # Firmware units are uncalibrated: these are wheel commands, not m/s.
         headroom = self.max_command - self.min_command
