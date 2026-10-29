@@ -15,8 +15,9 @@ from robot_control.tag_distance import CAMERA_OFFSET_FROM_ROBOT_CENTER_M
 
 
 class ApproachTag(Node):
-    def __init__(self):
-        super().__init__('approach_tag')
+    def __init__(self, node_name='approach_tag', defaults=None):
+        super().__init__(node_name)
+        defaults = defaults or {}
         for name, default in [('tag_frame', 'tag_0'), ('target_distance', 1.0),
                               ('max_command', 0.08), ('max_duration', 20.0),
                               ('min_command', 0.0), ('drive_seconds', 3.5),
@@ -24,24 +25,13 @@ class ApproachTag(Node):
                               ('use_hw1_turns', True), ('stop_margin', 0.05),
                               ('square_to_tag', False), ('pose_timeout', 0.6),
                               ('loss_grace_seconds', 1.5)]:
-            self.declare_parameter(name, default)
+            self.declare_parameter(name, defaults.get(name, default))
         self.tag_frame = self.get_parameter('tag_frame').value
         self.square_to_tag = self.get_parameter('square_to_tag').value
         self.pose_timeout = self.get_parameter('pose_timeout').value
         if not math.isfinite(self.pose_timeout) or self.pose_timeout <= 0:
             raise ValueError('pose_timeout must be finite and > 0')
-        policy_type = SquareApproachPolicy if self.square_to_tag else ApproachPolicy
-        self.policy = policy_type(
-            self.get_parameter('target_distance').value,
-            self.get_parameter('max_command').value,
-            self.get_parameter('max_duration').value,
-            min_command=self.get_parameter('min_command').value,
-            drive_seconds=self.get_parameter('drive_seconds').value,
-            pause_seconds=self.get_parameter('pause_seconds').value,
-            pivot_command=self.get_parameter('pivot_command').value,
-            use_hw1_turns=self.get_parameter('use_hw1_turns').value,
-            stop_margin=self.get_parameter('stop_margin').value,
-            loss_grace_seconds=self.get_parameter('loss_grace_seconds').value)
+        self.policy = self.make_policy()
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.measurement = None
         self.last_received = None
@@ -60,6 +50,20 @@ class ApproachTag(Node):
             f'Approach armed for {self.tag_frame}; target {self.policy.target:.2f} m '
             'from robot centre. '
             'Waiting for fresh tag pose.')
+
+    def make_policy(self):
+        policy_type = SquareApproachPolicy if self.square_to_tag else ApproachPolicy
+        return policy_type(
+            self.get_parameter('target_distance').value,
+            self.get_parameter('max_command').value,
+            self.get_parameter('max_duration').value,
+            min_command=self.get_parameter('min_command').value,
+            drive_seconds=self.get_parameter('drive_seconds').value,
+            pause_seconds=self.get_parameter('pause_seconds').value,
+            pivot_command=self.get_parameter('pivot_command').value,
+            use_hw1_turns=self.get_parameter('use_hw1_turns').value,
+            stop_margin=self.get_parameter('stop_margin').value,
+            loss_grace_seconds=self.get_parameter('loss_grace_seconds').value)
 
     def on_tf(self, message):
         for tf in message.transforms:
