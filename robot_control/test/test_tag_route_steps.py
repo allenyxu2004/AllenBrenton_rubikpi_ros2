@@ -1,7 +1,8 @@
 """Test turn-only steps added around the existing approach controller."""
 import math
 import unittest
-from robot_control.tag_route_steps import AlignTagPolicy, STAGES, ALIGN_COMPLETE
+from robot_control.tag_route_steps import AlignTagPolicy, ALIGN_COMPLETE
+from robot_control.route_config import STAGES
 from robot_control.kinematic_control import LEFT_TURN_LEFT, LEFT_TURN_RIGHT
 
 
