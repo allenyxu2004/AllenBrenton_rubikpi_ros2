@@ -19,7 +19,7 @@ class ApproachPolicyTest(unittest.TestCase):
 
     def test_slows_near_target(self):
         far = ApproachPolicy().step(0, 1.5, 0., True)[0]
-        near = ApproachPolicy().step(0, 1.05, 0., True)[0]
+        near = ApproachPolicy().step(0, 1.10, 0., True)[0]
         self.assertLess(near, far)
 
     def test_arrival_never_restarts_or_reverses(self):
@@ -47,7 +47,7 @@ class ApproachPolicyTest(unittest.TestCase):
     def test_deadband_floor_preserves_steering_and_stop(self):
         for bearing in [-0.1, 0., 0.1]:
             policy = ApproachPolicy(max_command=0.15, min_command=0.08)
-            left, right = policy.step(0, 1.01, bearing, True)
+            left, right = policy.step(0, 1.06, bearing, True)
             self.assertTrue(0.08 <= left <= 0.15 and 0.08 <= right <= 0.15)
             self.assertAlmostEqual((left - right) * bearing, abs((left - right) * bearing))
             self.assertEqual(policy.step(1, 1.0, bearing, True), (0., 0.))
@@ -120,11 +120,20 @@ class ApproachPolicyTest(unittest.TestCase):
         policy.step(0, 2., math.radians(15), True)
         self.assertEqual(policy.step(0.05, fresh=False), (0., 0.))
 
+    def test_coast_margin_stops_early_and_latches(self):
+        policy = ApproachPolicy(target_distance=1., stop_margin=0.05)
+        self.assertGreater(policy.step(0, 1.06, 0., True)[0], 0)
+        self.assertEqual(policy.step(0.1, 1.05, 0., True), (0., 0.))
+        self.assertEqual(policy.step(0.2, 1.2, 0., True), (0., 0.))
+        no_margin = ApproachPolicy(stop_margin=0.)
+        self.assertGreater(no_margin.step(0, 1.01, 0., True)[0], 0)
+
     def test_bad_configuration(self):
         for kw in [{'max_command': 0.5}, {'target_distance': -1},
                    {'max_duration': math.nan}, {'drive_seconds': 0},
                    {'pause_seconds': -1}, {'pivot_command': 0.31},
-                   {'pivot_command': 0}, {'min_command': -0.01},
+                   {'pivot_command': 0}, {'stop_margin': -0.01},
+                   {'stop_margin': math.nan}, {'min_command': -0.01},
                    {'min_command': 0.08, 'max_command': 0.08}]:
             with self.assertRaises(ValueError):
                 ApproachPolicy(**kw)

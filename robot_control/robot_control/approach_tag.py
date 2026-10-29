@@ -20,7 +20,7 @@ class ApproachTag(Node):
                               ('max_command', 0.08), ('max_duration', 20.0),
                               ('min_command', 0.0), ('drive_seconds', 3.5),
                               ('pause_seconds', 0.3), ('pivot_command', 0.2),
-                              ('use_hw1_turns', True)]:
+                              ('use_hw1_turns', True), ('stop_margin', 0.05)]:
             self.declare_parameter(name, default)
         self.tag_frame = self.get_parameter('tag_frame').value
         self.policy = ApproachPolicy(
@@ -31,7 +31,8 @@ class ApproachTag(Node):
             drive_seconds=self.get_parameter('drive_seconds').value,
             pause_seconds=self.get_parameter('pause_seconds').value,
             pivot_command=self.get_parameter('pivot_command').value,
-            use_hw1_turns=self.get_parameter('use_hw1_turns').value)
+            use_hw1_turns=self.get_parameter('use_hw1_turns').value,
+            stop_margin=self.get_parameter('stop_margin').value)
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.measurement = None
         self.last_received = None
@@ -44,7 +45,9 @@ class ApproachTag(Node):
         self.last_log = -math.inf
         self.get_logger().info(
             f'Approach armed for {self.tag_frame}; target {self.policy.target:.2f} m '
-            'from robot centre. Waiting for fresh tag pose.')
+            f'from robot centre; command stop at '
+            f'{self.policy.target + self.policy.stop_margin:.2f} m. '
+            'Waiting for fresh tag pose.')
 
     def on_tf(self, message):
         for tf in message.transforms:

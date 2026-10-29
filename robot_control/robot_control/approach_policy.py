@@ -13,18 +13,20 @@ class ApproachPolicy:
 
     def __init__(self, target_distance=1.0, max_command=0.08, max_duration=20.0,
                  min_command=0.0, drive_seconds=3.5, pause_seconds=0.3,
-                 pivot_command=0.2, use_hw1_turns=False):
+                 pivot_command=0.2, use_hw1_turns=False, stop_margin=0.05):
         if not all(math.isfinite(v) for v in
                    (target_distance, max_command, max_duration, min_command,
-                    drive_seconds, pause_seconds, pivot_command)):
+                    drive_seconds, pause_seconds, pivot_command, stop_margin)):
             raise ValueError('Approach parameters must be finite')
         if (target_distance <= 0 or not 0 <= min_command < max_command <= 0.3
                 or max_duration <= 0 or drive_seconds <= 0 or pause_seconds < 0
-                or not 0 < pivot_command <= 0.3):
+                or not 0 < pivot_command <= 0.3 or not 0 <= stop_margin <= 0.3):
             raise ValueError(
                 'Require target/duration/drive_seconds > 0, pause_seconds >= 0, '
-                '0 <= min_command < max_command <= 0.3, 0 < pivot_command <= 0.3')
+                '0 <= min_command < max_command <= 0.3, 0 < pivot_command <= 0.3, '
+                '0 <= stop_margin <= 0.3')
         self.target = target_distance
+        self.stop_margin = stop_margin
         self.max_command = max_command
         self.max_duration = max_duration
         self.min_command = min_command
@@ -63,8 +65,8 @@ class ApproachPolicy:
         if not all(v is not None and math.isfinite(v) for v in (distance, bearing)):
             return self.stop('Invalid tag pose')
         self.tracking = True
-        if distance <= self.target:
-            return self.stop('Target distance reached')
+        if distance <= self.target + self.stop_margin:
+            return self.stop('Stopping threshold reached (target + coast margin)')
         if abs(bearing) > math.radians(20):
             return self.stop('Tag more than 20 degrees off centre')
         # Use actual transition times so a delayed callback cannot skip a pause.
