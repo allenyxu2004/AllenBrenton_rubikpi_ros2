@@ -3,8 +3,10 @@ import math
 from robot_control.approach_policy import ApproachPolicy
 from robot_control.kinematic_control import LEFT_TURN_LEFT, LEFT_TURN_RIGHT
 
-STAGES = [('approach', 9), ('align', 8), ('approach', 8),
-          ('align', 7), ('align', 5), ('approach', 5), ('align', 9)]
+# Third field overrides the normal approach distance for that stage only.
+STAGES = [('approach', 9, None), ('align', 8, None), ('approach', 8, None),
+          ('align', 7, None), ('approach', 7, None), ('align', 5, None),
+          ('approach', 5, None), ('align', 9, None), ('approach', 9, 1.5)]
 ALIGN_COMPLETE = 'Route alignment complete'
 
 

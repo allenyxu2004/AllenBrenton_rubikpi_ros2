@@ -19,7 +19,7 @@ class TagRoute(ApproachTag):
             'use_hw1_turns': True, 'drive_seconds': 3.5,
             'pause_seconds': 0.3})
         self.get_logger().info('Route: approach 9, align 8, approach 8, align 7, '
-                               'align 5, approach 5, align 9, stop')
+                               'approach 7, align 5, approach 5, align 9, approach 9 to 1.5 m, stop')
 
     def tick(self):
         if self.finished or time.monotonic() < self.resume_at:
@@ -37,13 +37,13 @@ class TagRoute(ApproachTag):
         self.stage_index += 1
         if self.stage_index == len(STAGES):
             self.finished = True
-            self.get_logger().info('Route complete; remaining stopped facing tag 9')
+            self.get_logger().info('Route complete; remaining stopped 1.5 m from tag 9')
             return
-        kind, tag = STAGES[self.stage_index]
+        kind, tag, distance = STAGES[self.stage_index]
         self.tag_frame = f'tag_{tag}'
         self.square_to_tag = kind == 'approach'
         if self.square_to_tag:
-            self.policy = self.make_policy()
+            self.policy = self.make_policy(target_distance=distance)
         else:
             self.policy = AlignTagPolicy(
                 target_distance=self.get_parameter('target_distance').value,
@@ -59,7 +59,7 @@ class TagRoute(ApproachTag):
         self.reported_stop = self.reported_aligning = False
         self.last_log = -math.inf
         self.resume_at = time.monotonic()+self.get_parameter('pause_seconds').value
-        self.get_logger().info(f'Next route step: {kind} {self.tag_frame}')
+        self.get_logger().info(f'Next route step: {kind} {self.tag_frame}; target={self.policy.target:.2f} m')
 
 
 def main(args=None):

@@ -51,10 +51,11 @@ class ApproachTag(Node):
             'from robot centre. '
             'Waiting for fresh tag pose.')
 
-    def make_policy(self):
+    def make_policy(self, target_distance=None):
         policy_type = SquareApproachPolicy if self.square_to_tag else ApproachPolicy
         return policy_type(
-            self.get_parameter('target_distance').value,
+            (self.get_parameter('target_distance').value
+             if target_distance is None else target_distance),
             self.get_parameter('max_command').value,
             self.get_parameter('max_duration').value,
             min_command=self.get_parameter('min_command').value,
