@@ -1,6 +1,7 @@
 """Report robot-centre-to-tag range from fresh AprilTag transforms, in metres."""
 
 import math
+import re
 import time
 
 import rclpy
@@ -16,16 +17,20 @@ CAMERA_OFFSET_FROM_ROBOT_CENTER_M = 3.5 * 0.0254  # 0.0889 m
 
 
 class TagDistance(Node):
-    """Publish distances for the configured detector's tag frames."""
+    """Publish distances for all observed tags, or an explicit frame selection."""
 
     def __init__(self):
         super().__init__('tag_distance')
         self.declare_parameter('camera_frame', 'camera_frame')
-        self.declare_parameter('tag_frames', ['tag_0', 'tag_1'])
+        # Empty selection discovers the detector's tag_<id> frames on /tf.
+        self.declare_parameter('tag_frames', [''])
         self.camera_frame = self.get_parameter('camera_frame').value
+        self.tag_frames = {
+            frame for frame in self.get_parameter('tag_frames').value if frame
+        }
         self.publishers_by_frame = {
             frame: self.create_publisher(Float64, f'{frame}/distance', 10)
-            for frame in self.get_parameter('tag_frames').value
+            for frame in self.tag_frames
         }
         self.last_seen = {}
         self.last_logged = {}
@@ -39,13 +44,17 @@ class TagDistance(Node):
         for transform in message.transforms:
             frame = transform.child_frame_id
             if (transform.header.frame_id != self.camera_frame
-                    or frame not in self.publishers_by_frame):
+                    or (frame not in self.tag_frames if self.tag_frames
+                        else re.fullmatch(r'tag_\d+', frame) is None)):
                 continue
             position = transform.transform.translation
             forward_depth = position.z + CAMERA_OFFSET_FROM_ROBOT_CENTER_M
             distance = math.hypot(position.x, position.y, forward_depth)
             if not math.isfinite(distance):
                 continue
+            if frame not in self.publishers_by_frame:
+                self.publishers_by_frame[frame] = self.create_publisher(
+                    Float64, f'{frame}/distance', 10)
             self.publishers_by_frame[frame].publish(Float64(data=distance))
             self.last_seen[frame] = now
             if now - self.last_logged.get(frame, -math.inf) >= 1.0:
