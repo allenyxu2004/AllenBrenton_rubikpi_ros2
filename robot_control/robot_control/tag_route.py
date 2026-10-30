@@ -113,18 +113,34 @@ class TagRoute(Node):
         distance, bearing = self.measurement or (None, None)
         left, right = self.policy.step(now, bearing, fresh, self.observation_time)
         self.publish_command(left, right)
+        control = dict(left_command=left, right_command=right, fresh=fresh,
+                       source_stamp_s=self.source_stamp, bearing_rad=bearing,
+                       pose_age_s=(None if self.observation_time is None
+                                   else now - self.observation_time),
+                       waiting_after_turn=self.policy.turn_pause_until is not None)
+        goal_log = ''
+        if self.approaching:
+            control['phase'] = self.policy.phase
+            control['goal_right_forward_heading'] = self.policy.goal
+            if self.policy.goal is not None:
+                gx, gz, heading = self.policy.goal
+                goal_log = (f' phase={self.policy.phase} '
+                            f'goal_right={gx:+.3f} m goal_forward={gz:+.3f} m '
+                            f'goal_heading={math.degrees(heading):+.1f} deg')
+        # Record every command; the 1 Hz console can miss short pivot pulses.
+        self.report_event('control', **control)
         if self.policy.reason:
             if not self.reported_stop:
                 self.get_logger().info(f'STOP: {self.policy.reason}')
-                self.report_event('stop', reason=self.policy.reason,
-                                  fresh=fresh, source_stamp_s=self.source_stamp)
+                self.report_event('stop', reason=self.policy.reason, **control)
                 self.reported_stop = True
             if self.policy.outcome is Outcome.SUCCEEDED:
                 self.advance_route()
         elif fresh and now - self.last_log >= cfg.PROGRESS_LOG_SECONDS:
             self.get_logger().info(
                 f'{self.tag_frame}: range={distance:.3f} m '
-                f'bearing={math.degrees(bearing):+.1f} deg L={left:.3f} R={right:.3f}')
+                f'bearing={math.degrees(bearing):+.1f} deg L={left:.3f} R={right:.3f}'
+                f'{goal_log}')
             self.last_log = now
 
     def advance_route(self):

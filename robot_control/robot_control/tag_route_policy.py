@@ -13,6 +13,8 @@ from robot_control.kinematic_control import (
 
 MAX_BEARING_RADIANS = math.radians(20)
 ALIGN_ENTER_RADIANS = math.radians(8)
+FAR_APPROACH_DISTANCE_M = 1.8
+FAR_ALIGN_ENTER_RADIANS = math.radians(10)
 ALIGN_EXIT_RADIANS = math.radians(3)
 PIVOT_PAUSE_SECONDS = 0.4
 PIVOT_PULSE_SECONDS = 0.05
@@ -148,13 +150,14 @@ class MotionPolicy:
             return True
         return False
 
-    def motion(self, now, distance_error, bearing, force_align=False):
+    def motion(self, now, distance_error, bearing, force_align=False,
+               align_enter=ALIGN_ENTER_RADIANS):
         """Choose a pivot or forward steering without applying arrival rules."""
         if self.interval_paused(now):
             return 0.0, 0.0
         # Align before translating when lateral error is substantial. Hysteresis
         # prevents repeated mode switching at one bearing threshold.
-        if force_align or abs(bearing) >= ALIGN_ENTER_RADIANS:
+        if force_align or abs(bearing) >= align_enter:
             self.aligning = True
         elif abs(bearing) <= ALIGN_EXIT_RADIANS:
             self.aligning = False
@@ -229,11 +232,14 @@ class SquareApproachPolicy(MotionPolicy):
     def __init__(self, target):
         super().__init__(target, cfg.APPROACH_TIMEOUT_SECONDS)
         self.goal = None
+        self.tag_distance = None
         self.phase = 'WAIT'
         self.settled_since = None
 
     def update_goal(self, x, z, quaternion):
         self.goal = square_goal(x, z, quaternion, self.target)
+        # Robot-centre horizontal distance to the tag, not to the goal point.
+        self.tag_distance = math.hypot(x, z)
 
     def _step(self, now, bearing=None, fresh=False):
         if not self.ready(now, fresh and self.goal is not None):
@@ -269,7 +275,10 @@ class SquareApproachPolicy(MotionPolicy):
                             min(MAX_STEERING_RADIANS, control_angle))
         left, right = self.motion(
             now, error + cfg.FORWARD_ERROR_OFFSET_M, control_angle,
-            force_align=self.phase == 'ORIENTATION')
+            force_align=self.phase == 'ORIENTATION',
+            align_enter=(FAR_ALIGN_ENTER_RADIANS
+                         if self.tag_distance > FAR_APPROACH_DISTANCE_M
+                         else ALIGN_ENTER_RADIANS))
         if self.phase == 'POSITION' and left > 0 and right > 0:
             # Reuse HW1's measured straight-line wheel ratio in this mode.
             left *= FORWARD_LEFT / FORWARD_RIGHT
