@@ -38,7 +38,7 @@ robot_control/launch/tag_route.launch.py
 |   |   `-- foxglove_bridge          (external package, port 8765)
 |   |-- includes apriltag_ros/launch/apriltag_launch.py
 |   |   `-- apriltag_node            (tag detection and pose estimation)
-|   `-- tag_distance                (diagnostic distance reporter)
+|   `-- tag_distance                (optional: distance_reporting:=true)
 |-- motor_control                   (USB serial motor/IMU bridge)
 `-- tag_route                       (route sequencer using ApproachTag)
 ```
@@ -104,7 +104,7 @@ flowchart TD
 | [square_approach.py](../../robot_control/robot_control/square_approach.py) | Computes a waypoint along the tag normal, approaches it, aligns heading, and settles. Success requires position error within 8 cm and heading within 3 degrees for 0.5 seconds. It does not reverse to a goal behind the robot. |
 | [approach_policy.py](../../robot_control/robot_control/approach_policy.py) | Shared calibrated turn pulses, interval pauses, wheel-command generation, slowdown, deadband floor, deadline and tracking-loss handling. |
 | [kinematic_control.py](../../robot_control/robot_control/kinematic_control.py) | Straight-driving ratio and calibrated left/right pivot commands and rates. The route does not use its dead-reckoned pose estimate for navigation. |
-| [tag_distance.py](../../robot_control/robot_control/tag_distance.py) | Supplies the imported 0.0889 m camera-to-robot-center offset. Its separately launched node reports diagnostic ranges and defaults to tags 0 and 1. The route does not subscribe to those distance topics. |
+| [tag_distance.py](../../robot_control/robot_control/tag_distance.py) | Optional diagnostic ranges for observed tags. The shared camera offset now lives in `control_config.py`. The route does not subscribe to those distance topics. |
 | [motor_control.py](../../robot_control/robot_control/motor_control.py) | Receives wheel commands, clips each to [-0.5, 0.5], sends newline JSON over `/dev/ttyUSB0` at 115200 baud, and publishes IMU data. |
 
 The removed `tag_route_policy.py` is not part of this implementation. Neither `velocity_control.py`, `keyboard_control.py`, `move_forward.py`, `teleop_example.py`, nor `config/waypoints.txt` participates in this launch's control path. The standalone `calibrations.py` is not imported by this path; the motor calibration constants actually used here are in `kinematic_control.py`.
@@ -129,7 +129,7 @@ Approach distances are robot-center planar standoffs along the tag's normal, sub
 | --- | --- |
 | Normal approach distance | `target_distance=0.5` in `ROUTE_DEFAULTS` in `route_config.py` |
 | Final approach distance | 1.5 m override in the final `STAGES` entry in `route_config.py`; passed to `make_policy(target_distance=...)` |
-| Approach mode | `square_to_tag=True` |
+| Approach mode | Selected by each `approach` stage |
 | Forward command floor / ceiling | `min_command=0.08`, `max_command=0.15`; these are firmware units, not m/s. Calibrated pivots use separate values. |
 | Approach deadline | `max_duration=60.0` per approach policy |
 | Alignment/search deadline | 30 s per turn-only stage |
@@ -139,7 +139,7 @@ Approach distances are robot-center planar standoffs along the tag's normal, sub
 | Approach pivot timing | Bearing-dependent 0.05-0.12 s nominal pulses, then 0.2 s stopped; timer granularity is 0.05 s |
 | Pose freshness | `pose_timeout=0.6`; checks both source stamp age and local receipt age |
 | Tracking recovery | `loss_grace_seconds=1.5`; wheels stop while poses are stale, then failure latches if recovery does not occur |
-| Camera offset | +0.0889 m along forward depth, from `tag_distance.py` |
+| Camera offset | +0.0889 m along forward depth, from `control_config.py` |
 | Straight-wheel ratio | 0.25 / 0.20 from `kinematic_control.py` |
 | Left pivot | L=-0.45, R=0.30; nominal rate `(pi/2)/0.989` rad/s |
 | Right pivot | L=0.45, R=-0.30; nominal rate `(pi/2)/0.859` rad/s |
@@ -168,6 +168,11 @@ Look for detection ID 9 and advancing TF timestamps. A `tag_distance` log for `t
 | --- | --- |
 | [test_tag_route_steps.py](../../robot_control/test/test_tag_route_steps.py) | Route order/distance override, left search pulses, centering success, brief loss recovery, latched loss and search timeout. |
 | [test_approach_policy.py](../../robot_control/test/test_approach_policy.py) | Shared steering, slowdown, pauses, calibrated turn timing and stop behavior. |
-| [test_square_approach.py](../../robot_control/test/test_square_approach.py) | Square-goal geometry and approach behavior. One previously observed test expects a 20-degree visibility cutoff while the current implementation checks 35 degrees; that mismatch remains. |
+| [test_square_approach.py](../../robot_control/test/test_square_approach.py) | Square-goal geometry and approach behavior. The visibility cutoff is consistently 20 degrees. |
 
 These source-level checks do not validate physical braking distance, camera calibration accuracy, or the installed robot overlay. The final launch command starts autonomous control; run it with the first target visible and no competing motor-command publisher.
+
+Shared safety, interval timing, pivot and forward helpers live in `ApproachPolicy`.
+Square and alignment policies use these helpers directly, without synthetic ranges.
+Route progression uses `Outcome.SUCCEEDED`; log wording does not control transitions.
+The first stage and later stages use the same `_start_stage()` method.

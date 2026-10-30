@@ -1,7 +1,7 @@
 """Turn-only route step using the same feedback timing as approach_tag."""
 import math
 
-from robot_control.approach_policy import ApproachPolicy
+from robot_control.approach_policy import ApproachPolicy, Outcome
 from robot_control.kinematic_control import LEFT_TURN_LEFT, LEFT_TURN_RIGHT
 
 ALIGN_COMPLETE = 'Route alignment complete'
@@ -18,25 +18,17 @@ class AlignTagPolicy(ApproachPolicy):
     def __init__(self, *args, **kwargs):
         """Keep the shared motion settings and initialize turn-only timers."""
         super().__init__(*args, **kwargs)
-        self.search_started = None
         self.search_pulse = None
         self.search_pause_until = 0.0
         self.centered_since = None
 
     def step(self, now, distance=None, bearing=None, fresh=False):
         """Return one pair of wheel commands from the latest target observation."""
-        if self.reason:
+        if not self.ready(now, fresh, allow_search=True):
+            self.centered_since = None
             return 0.0, 0.0
-        if self.search_started is None:
-            self.search_started = now
-        if now - self.search_started >= self.max_duration:
-            return self.stop('Alignment/search time limit reached')
-
         if not fresh:
             self.centered_since = None
-            if self.tracking:
-                # Once acquired, loss means stop/recover, not blind searching.
-                return super().step(now, distance, bearing, False)
             return self._search_left(now)
 
         if bearing is None or not math.isfinite(bearing):
@@ -66,7 +58,7 @@ class AlignTagPolicy(ApproachPolicy):
         if self.centered_since is None:
             self.centered_since = now
         if now - self.centered_since >= CENTER_SETTLE_SECONDS:
-            self.stop(ALIGN_COMPLETE)
+            self.stop(ALIGN_COMPLETE, Outcome.SUCCEEDED)
         return 0.0, 0.0
 
     def _turn_toward_tag(self, now, bearing):
@@ -74,7 +66,4 @@ class AlignTagPolicy(ApproachPolicy):
         self.centered_since = None
         self.aligning = True
         steering = max(-MAX_STEERING_RADIANS, min(MAX_STEERING_RADIANS, bearing))
-        # A synthetic range avoids the base policy's distance-arrival stop.
-        # Forcing aligning=True above ensures this call only produces pivots.
-        steering_only_distance = self.target + self.stop_margin + 1.0
-        return super().step(now, steering_only_distance, steering, True)
+        return self.motion(now, 0.0, steering, force_align=True)

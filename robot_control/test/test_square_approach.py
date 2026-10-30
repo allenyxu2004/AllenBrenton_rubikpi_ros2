@@ -4,6 +4,7 @@ import math
 import unittest
 
 from robot_control.square_approach import SquareApproachPolicy, square_goal
+from robot_control.approach_policy import Outcome
 
 
 class SquareApproachTest(unittest.TestCase):
@@ -63,6 +64,21 @@ class SquareApproachTest(unittest.TestCase):
         policy.step(0., 1., 0., True)
         self.assertEqual(policy.step(0.1, fresh=False), (0., 0.))
         self.assertIn('lost', policy.reason)
+
+    def test_visibility_boundary_and_outcome(self):
+        for degrees, expected in [(20, Outcome.RUNNING), (20.1, Outcome.FAILED)]:
+            with self.subTest(degrees=degrees):
+                policy = SquareApproachPolicy()
+                policy.update_goal(0., 2., (1., 0., 0., 0.))
+                policy.step(0., 2., math.radians(degrees), True)
+                self.assertEqual(policy.outcome, expected)
+        policy = SquareApproachPolicy()
+        policy.update_goal(0., 1., (1., 0., 0., 0.))
+        policy.step(0., 1., 0., True)
+        policy.step(.5, 1., 0., True)
+        self.assertEqual(policy.outcome, Outcome.SUCCEEDED)
+        policy.stop('Later error cannot overwrite latched success')
+        self.assertEqual(policy.outcome, Outcome.SUCCEEDED)
 
     def test_deadline_and_visibility(self):
         policy = SquareApproachPolicy(max_duration=1.)

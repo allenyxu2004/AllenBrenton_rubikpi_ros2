@@ -1,6 +1,9 @@
 """Bounded wheel commands for a short tag approach with in-place alignment."""
 
 import math
+from enum import Enum
+
+from robot_control.control_config import POLICY_DEFAULTS
 
 from robot_control.kinematic_control import (
     LEFT_TURN_LEFT, LEFT_TURN_RIGHT, LEFT_TURN_RATE,
@@ -8,27 +11,56 @@ from robot_control.kinematic_control import (
 )
 
 
+MAX_COMMAND = 0.3
+MAX_STOP_MARGIN_M = 0.3
+MAX_BEARING_RADIANS = math.radians(20)
+ALIGN_ENTER_RADIANS = math.radians(8)
+ALIGN_EXIT_RADIANS = math.radians(3)
+PIVOT_PAUSE_SECONDS = 0.2
+MIN_PIVOT_SECONDS = 0.05
+MAX_PIVOT_SECONDS = 0.12
+PIVOT_CORRECTION_FRACTION = 0.5
+PIVOT_RESIDUAL_RADIANS = math.radians(2)
+FORWARD_GAIN = 0.25
+STEERING_GAIN = 0.12
+MAX_STEERING_FRACTION = 0.5
+
+
+class Outcome(Enum):
+    RUNNING = 'running'
+    SUCCEEDED = 'succeeded'
+    FAILED = 'failed'
+
+
 class ApproachPolicy:
     """Latch a stop on arrival, tracking failure, or the test time limit."""
 
-    def __init__(self, target_distance=1.0, max_command=0.08, max_duration=20.0,
-                 min_command=0.0, drive_seconds=3.5, pause_seconds=0.3,
-                 pivot_command=0.2, use_hw1_turns=False, stop_margin=0.05,
-                 loss_grace_seconds=0.0):
+    def __init__(self,
+                 target_distance=POLICY_DEFAULTS['target_distance'],
+                 max_command=POLICY_DEFAULTS['max_command'],
+                 max_duration=POLICY_DEFAULTS['max_duration'],
+                 min_command=POLICY_DEFAULTS['min_command'],
+                 drive_seconds=POLICY_DEFAULTS['drive_seconds'],
+                 pause_seconds=POLICY_DEFAULTS['pause_seconds'],
+                 pivot_command=POLICY_DEFAULTS['pivot_command'],
+                 use_hw1_turns=POLICY_DEFAULTS['use_hw1_turns'],
+                 stop_margin=POLICY_DEFAULTS['stop_margin'],
+                 loss_grace_seconds=POLICY_DEFAULTS['loss_grace_seconds']):
         if not all(math.isfinite(v) for v in
                    (target_distance, max_command, max_duration, min_command,
                     drive_seconds, pause_seconds, pivot_command, stop_margin,
                     loss_grace_seconds)):
             raise ValueError('Approach parameters must be finite')
-        if (target_distance <= 0 or not 0 <= min_command < max_command <= 0.3
+        if (target_distance <= 0 or not 0 <= min_command < max_command <= MAX_COMMAND
                 or max_duration <= 0 or drive_seconds <= 0 or pause_seconds < 0
-                or not 0 < pivot_command <= 0.3 or not 0 <= stop_margin <= 0.3
+                or not 0 < pivot_command <= MAX_COMMAND
+                or not 0 <= stop_margin <= MAX_STOP_MARGIN_M
                 or loss_grace_seconds < 0):
             raise ValueError(
                 'Require target/duration/drive_seconds > 0, '
                 'pause_seconds/loss_grace_seconds >= 0, '
                 '0 <= min_command < max_command <= 0.3, 0 < pivot_command <= 0.3, '
-                '0 <= stop_margin <= 0.3')
+                f'0 <= stop_margin <= {MAX_STOP_MARGIN_M}')
         self.target = target_distance
         self.stop_margin = stop_margin
         self.max_command = max_command
@@ -51,61 +83,89 @@ class ApproachPolicy:
         self.started_at = None
         self.tracking = False
         self.reason = None
+        self.outcome = Outcome.RUNNING
 
-    def stop(self, reason):
+    def stop(self, reason, outcome=Outcome.FAILED):
         if self.reason is None:
             self.reason = reason
+            self.outcome = outcome
         return 0.0, 0.0
 
-    def step(self, now, distance=None, bearing=None, fresh=False):
+    def ready(self, now, fresh, allow_search=False):
+        """Check latched stops, deadline and tracking loss before any motion."""
         if self.started_at is None:
             self.started_at = now
         if self.reason is not None:
-            return 0.0, 0.0
+            return False
         if now - self.started_at >= self.max_duration:
-            return self.stop('Test time limit reached')
+            self.stop('Test time limit reached')
+            return False
         if not fresh:
             if self.tracking:
                 if self.lost_since is None:
                     self.lost_since = now
                 self.pivot_started_at = None
                 if now - self.lost_since >= self.loss_grace_seconds:
-                    return self.stop('Tag lost or stale; restart controller to retry')
-            return 0.0, 0.0
+                    self.stop('Tag lost or stale; restart controller to retry')
+            return allow_search and not self.tracking and self.reason is None
         self.lost_since = None
+        self.tracking = True
+        return True
+
+    def step(self, now, distance=None, bearing=None, fresh=False):
+        if not self.ready(now, fresh):
+            return 0.0, 0.0
         if not all(v is not None and math.isfinite(v) for v in (distance, bearing)):
             return self.stop('Invalid tag pose')
-        self.tracking = True
         if distance <= self.target + self.stop_margin:
-            return self.stop('Stopping threshold reached (target + coast margin)')
-        if abs(bearing) > math.radians(20):
+            return self.stop('Stopping threshold reached (target + coast margin)',
+                             Outcome.SUCCEEDED)
+        if abs(bearing) > MAX_BEARING_RADIANS:
             return self.stop('Tag more than 20 degrees off centre')
+        return self.motion(now, distance - self.target, bearing)
+
+    def interval_paused(self, now):
+        """Measure full pauses from actual transitions, even after delayed ticks."""
         # Use actual transition times so a delayed callback cannot skip a pause.
         if self.segment_started_at is None:
             self.segment_started_at = now
         if self.paused:
             if now - self.pause_started_at < self.pause_seconds:
-                return 0.0, 0.0
+                return True
             self.paused = False
             self.segment_started_at = now
         elif (self.pause_seconds > 0
               and now - self.segment_started_at >= self.drive_seconds):
             self.paused = True
             self.pause_started_at = now
+            return True
+        return False
+
+    def motion(self, now, distance_error, bearing, force_align=False):
+        """Choose a pivot or forward steering without applying arrival rules."""
+        if self.interval_paused(now):
             return 0.0, 0.0
         # Align before translating when lateral error is substantial. Hysteresis
         # prevents repeated mode switching at one bearing threshold.
-        if abs(bearing) >= math.radians(8):
+        if force_align or abs(bearing) >= ALIGN_ENTER_RADIANS:
             self.aligning = True
-        elif abs(bearing) <= math.radians(3):
+        elif abs(bearing) <= ALIGN_EXIT_RADIANS:
             self.aligning = False
-        if self.aligning and self.use_hw1_turns:
+        if self.aligning:
+            return self.pivot(now, bearing)
+        self.pivot_started_at = None
+        self.pivot_pause_until = 0.0
+        return self.drive(distance_error, bearing)
+
+    def pivot(self, now, bearing):
+        """Return calibrated pulses or a continuous pivot for optical bearing."""
+        if self.use_hw1_turns:
             direction = 1 if bearing > 0 else -1
             if self.pivot_started_at is not None:
                 if (direction != self.pivot_direction
                         or now - self.pivot_started_at >= self.pivot_duration):
                     self.pivot_started_at = None
-                    self.pivot_pause_until = now + 0.2
+                    self.pivot_pause_until = now + PIVOT_PAUSE_SECONDS
                     return 0.0, 0.0
             if now < self.pivot_pause_until:
                 return 0.0, 0.0
@@ -113,24 +173,24 @@ class ApproachPolicy:
                 rate = RIGHT_TURN_RATE if direction > 0 else LEFT_TURN_RATE
                 # Half the estimated correction, capped at 0.12 s. The 20 Hz
                 # timer quantizes pulses; remeasure after a 0.2 s stop.
-                self.pivot_duration = max(0.05, min(
-                    0.12, 0.5 * (abs(bearing) - math.radians(2)) / rate))
+                self.pivot_duration = max(MIN_PIVOT_SECONDS, min(
+                    MAX_PIVOT_SECONDS, PIVOT_CORRECTION_FRACTION
+                    * (abs(bearing) - PIVOT_RESIDUAL_RADIANS) / rate))
                 self.pivot_started_at = now
                 self.pivot_direction = direction
             return ((RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT) if direction > 0
-                     else (LEFT_TURN_LEFT, LEFT_TURN_RIGHT))
-        if not self.aligning:
-            self.pivot_started_at = None
-            self.pivot_pause_until = 0.0
-        if self.aligning:
-            # Optical bearing positive = tag right = clockwise pivot.
-            turn = math.copysign(self.pivot_command, bearing)
-            return turn, -turn
+                    else (LEFT_TURN_LEFT, LEFT_TURN_RIGHT))
+        turn = math.copysign(self.pivot_command, bearing)
+        return turn, -turn
+
+    def drive(self, distance_error, bearing):
+        """Apply steering and deadband compensation to positive forward error."""
         # Firmware units are uncalibrated: these are wheel commands, not m/s.
         headroom = self.max_command - self.min_command
-        forward = min(headroom, 0.25 * (distance - self.target))
+        forward = min(headroom, FORWARD_GAIN * distance_error)
         # Positive optical bearing = tag right: left wheel must go faster.
-        turn = max(-forward * 0.5, min(forward * 0.5, 0.12 * bearing))
+        steering_limit = forward * MAX_STEERING_FRACTION
+        turn = max(-steering_limit, min(steering_limit, STEERING_GAIN * bearing))
         left, right = forward + turn, forward - turn
         scale = min(1.0, headroom / max(left, right))
         # Add deadband compensation after steering so neither wheel stalls.

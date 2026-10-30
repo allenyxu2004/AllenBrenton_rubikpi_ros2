@@ -11,9 +11,11 @@ from std_msgs.msg import Float64
 from tf2_msgs.msg import TFMessage
 
 
-# Camera faces forward, 3.5 inches ahead of the robot centre.
-# Assume zero lateral/vertical offset and no camera mounting rotation.
-CAMERA_OFFSET_FROM_ROBOT_CENTER_M = 3.5 * 0.0254  # 0.0889 m
+from robot_control.control_config import CAMERA_FRAME, CAMERA_OFFSET_FROM_ROBOT_CENTER_M
+
+EXPIRY_CHECK_SECONDS = 0.2
+POSE_EXPIRY_SECONDS = 1.0
+DISTANCE_LOG_SECONDS = 1.0
 
 
 class TagDistance(Node):
@@ -21,7 +23,7 @@ class TagDistance(Node):
 
     def __init__(self):
         super().__init__('tag_distance')
-        self.declare_parameter('camera_frame', 'camera_frame')
+        self.declare_parameter('camera_frame', CAMERA_FRAME)
         # Empty selection discovers the detector's tag_<id> frames on /tf.
         self.declare_parameter('tag_frames', [''])
         self.camera_frame = self.get_parameter('camera_frame').value
@@ -36,7 +38,7 @@ class TagDistance(Node):
         self.last_logged = {}
         self.subscription = self.create_subscription(
             TFMessage, '/tf', self.on_transforms, qos_profile_sensor_data)
-        self.timer = self.create_timer(0.2, self.expire)
+        self.timer = self.create_timer(EXPIRY_CHECK_SECONDS, self.expire)
 
     def on_transforms(self, message):
         """Translate camera measurements to the robot centre before reporting."""
@@ -57,7 +59,7 @@ class TagDistance(Node):
                     Float64, f'{frame}/distance', 10)
             self.publishers_by_frame[frame].publish(Float64(data=distance))
             self.last_seen[frame] = now
-            if now - self.last_logged.get(frame, -math.inf) >= 1.0:
+            if now - self.last_logged.get(frame, -math.inf) >= DISTANCE_LOG_SECONDS:
                 # Optical camera axes: x right, z forward.
                 bearing_deg = math.degrees(math.atan2(position.x, forward_depth))
                 self.get_logger().info(
@@ -70,7 +72,7 @@ class TagDistance(Node):
         """Invalidate the displayed range when a tag has been lost for one second."""
         now = time.monotonic()
         for frame in list(self.last_seen):
-            if now - self.last_seen[frame] > 1.0:
+            if now - self.last_seen[frame] > POSE_EXPIRY_SECONDS:
                 self.publishers_by_frame[frame].publish(Float64(data=math.nan))
                 self.get_logger().info(f'{frame}: tag lost; distance unavailable')
                 del self.last_seen[frame]

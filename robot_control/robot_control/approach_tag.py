@@ -11,10 +11,13 @@ from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float32MultiArray
 from tf2_msgs.msg import TFMessage
 
-from robot_control.approach_policy import ApproachPolicy
+from robot_control.approach_policy import ApproachPolicy, Outcome
 from robot_control.report_log import ReportLog
 from robot_control.square_approach import SquareApproachPolicy
-from robot_control.tag_distance import CAMERA_OFFSET_FROM_ROBOT_CENTER_M
+from robot_control.control_config import (
+    CAMERA_FRAME, CAMERA_OFFSET_FROM_ROBOT_CENTER_M, CONTROL_PERIOD_SECONDS,
+    MIN_QUATERNION_NORM, NODE_DEFAULTS, POLICY_DEFAULTS, PROGRESS_LOG_SECONDS,
+)
 
 
 class ApproachTag(Node):
@@ -24,30 +27,14 @@ class ApproachTag(Node):
         """Declare settings and connect the TF input to the 20 Hz control loop."""
         super().__init__(node_name)
         defaults = defaults or {}
-        parameter_defaults = {
-            'report_log_directory': '~/.ros/route_reports',
-            'tag_frame': 'tag_0',
-            'target_distance': 1.0,
-            'max_command': 0.08,
-            'max_duration': 20.0,
-            'min_command': 0.0,
-            'drive_seconds': 3.5,
-            'pause_seconds': 0.3,
-            'pivot_command': 0.2,
-            'use_hw1_turns': True,
-            'stop_margin': 0.05,
-            'square_to_tag': False,
-            'pose_timeout': 0.6,
-            'loss_grace_seconds': 1.5,
-        }
-        for name, default in parameter_defaults.items():
+        for name, default in NODE_DEFAULTS.items():
             self.declare_parameter(name, defaults.get(name, default))
         self.tag_frame = self.get_parameter('tag_frame').value
         self.square_to_tag = self.get_parameter('square_to_tag').value
         self.pose_timeout = self.get_parameter('pose_timeout').value
         if not math.isfinite(self.pose_timeout) or self.pose_timeout <= 0:
             raise ValueError('pose_timeout must be finite and > 0')
-        self.policy = self.make_policy()
+        self.initialize_policy()
         self.command_pub = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.report_run = uuid.uuid4().hex
         self.report_file = None
@@ -64,7 +51,7 @@ class ApproachTag(Node):
         self.reset_tracking()
         self.subscription = self.create_subscription(
             TFMessage, '/tf', self.on_tf, qos_profile_sensor_data)
-        self.timer = self.create_timer(0.05, self.tick)
+        self.timer = self.create_timer(CONTROL_PERIOD_SECONDS, self.tick)
         if self.square_to_tag:
             self.get_logger().info(
                 'Square-on mode: target is planar standoff along tag normal; '
@@ -114,22 +101,21 @@ class ApproachTag(Node):
                 goal_right_m=right, goal_forward_m=forward,
                 target_distance_m=self.policy.target)
 
+    def initialize_policy(self):
+        """Initialize the standalone policy; routes override this stage hook."""
+        self.policy = self.make_policy()
+
+    def policy_settings(self):
+        """Read the shared policy parameters in one place."""
+        return {name: self.get_parameter(name).value for name in POLICY_DEFAULTS}
+
     def make_policy(self, target_distance=None):
-        """Build a fresh policy from ROS parameters, optionally overriding distance."""
+        """Build an approach policy, optionally overriding its standoff."""
+        settings = self.policy_settings()
+        if target_distance is not None:
+            settings['target_distance'] = target_distance
         policy_type = SquareApproachPolicy if self.square_to_tag else ApproachPolicy
-        if target_distance is None:
-            target_distance = self.get_parameter('target_distance').value
-        return policy_type(
-            target_distance,
-            self.get_parameter('max_command').value,
-            self.get_parameter('max_duration').value,
-            min_command=self.get_parameter('min_command').value,
-            drive_seconds=self.get_parameter('drive_seconds').value,
-            pause_seconds=self.get_parameter('pause_seconds').value,
-            pivot_command=self.get_parameter('pivot_command').value,
-            use_hw1_turns=self.get_parameter('use_hw1_turns').value,
-            stop_margin=self.get_parameter('stop_margin').value,
-            loss_grace_seconds=self.get_parameter('loss_grace_seconds').value)
+        return policy_type(**settings)
 
     def reset_tracking(self):
         """Forget the previous target so it cannot satisfy the next route step."""
@@ -160,17 +146,17 @@ class ApproachTag(Node):
             age = self.get_clock().now().nanoseconds * 1e-9 - stamp
             p, q = tf.transform.translation, tf.transform.rotation
             values = [p.x, p.y, p.z, q.x, q.y, q.z, q.w]
-            if (tf.header.frame_id == 'camera_frame'
+            if (tf.header.frame_id == CAMERA_FRAME
                     and tf.child_frame_id.startswith('tag_')
                     and 0 <= age <= self.pose_timeout and p.z > 0
                     and all(math.isfinite(v) for v in values)
-                    and sum(v * v for v in values[3:]) > 1e-12
+                    and sum(v * v for v in values[3:]) > MIN_QUATERNION_NORM ** 2
                     and stamp > self.report_stamps.get(tf.child_frame_id, -math.inf)):
                 self.report_stamps[tf.child_frame_id] = stamp
                 self.report_event('observation', observed_tag=tf.child_frame_id,
                                   source_stamp_s=stamp, translation_m=values[:3],
                                   quaternion_xyzw=values[3:])
-            if tf.header.frame_id != 'camera_frame' or tf.child_frame_id != self.tag_frame:
+            if tf.header.frame_id != CAMERA_FRAME or tf.child_frame_id != self.tag_frame:
                 continue
             self._accept_target_transform(tf)
 
@@ -226,11 +212,11 @@ class ApproachTag(Node):
         if self.policy.reason and not self.reported_stop:
             self.report_event('stop', reason=self.policy.reason,
                               fresh=fresh, source_stamp_s=self.source_stamp)
-            if fresh and str(self.policy.reason).startswith('Square-on goal reached:'):
+            if fresh and self.policy.outcome is Outcome.SUCCEEDED:
                 self.report_arrival()
             self.get_logger().info(f'STOP: {self.policy.reason}')
             self.reported_stop = True
-        elif fresh and not self.policy.reason and now - self.last_log >= 1.0:
+        elif fresh and not self.policy.reason and now - self.last_log >= PROGRESS_LOG_SECONDS:
             state = 'PAUSE' if self.policy.paused else (
                 'ALIGN' if self.policy.aligning else 'DRIVE')
             details = (
