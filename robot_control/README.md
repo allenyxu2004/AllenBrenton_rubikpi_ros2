@@ -1,29 +1,48 @@
-# Robot control guide
+# HW2 tag route
 
-The working route command is:
+Build and run on the robot:
 
 ```bash
 cd ~/ros2_ws
-colcon build --symlink-install --packages-select robot_control
+colcon build --symlink-install --packages-select robot_control robot_vision_camera apriltag_ros
 source install/setup.bash
 ros2 launch robot_control tag_route.launch.py
 ```
 
-This starts autonomous control. Add `distance_reporting:=true` to also start the
-optional diagnostic distance reporter. The ROS environment and the camera/AprilTag packages must already be available.
+This starts autonomous motion, camera/Foxglove, detection and the motor bridge.
+Start with tag 9 visible and no other motor-command publisher. Ctrl-C stops it.
 
-## Where to read or edit
+Edit `robot_control/route_config.py` for the route, distances and motion settings.
+The route approaches tags 9 → 8 → 7 → 5 → 9, stopping square to each at 0.5 m,
+except the final stop at 1.5 m. These are robot-centre standoffs along the tag
+normal, with 8 cm position and 3° heading tolerances. Alignment stages search left.
+Tracking loss stops motion; failure stays stopped until the controller is restarted.
+Existing HW1 motor calibration is imported without changing the HW1 code.
 
-| Area | Files | Purpose |
-| --- | --- | --- |
-| Route settings | [route_config.py](robot_control/route_config.py) | Read the route top to bottom; change target order, final distance, or default motion settings here. |
-| Shared configuration | [control_config.py](robot_control/control_config.py) | Common defaults, camera geometry and control timing. |
-| Route sequencing | [tag_route.py](robot_control/tag_route.py) | Start each step, wait for success, and switch targets. |
-| Shared ROS control | [approach_tag.py](robot_control/approach_tag.py) | Receive TF, check freshness, run the active policy, and publish wheel commands. Also runs standalone. |
-| Motion policies | [approach_policy.py](robot_control/approach_policy.py), [square_approach.py](robot_control/square_approach.py), [tag_route_steps.py](robot_control/tag_route_steps.py) | Basic approach/pulse timing, square-on approach geometry, and turn-only alignment respectively. |
-| Hardware | [motor_control.py](robot_control/motor_control.py), [kinematic_control.py](robot_control/kinematic_control.py) | Serial bridge and the calibrated wheel/pivot constants used by these policies. |
-| Launch | [launch/](launch/) | Starts the camera, detector, reporting, motor bridge and route controller. |
-| Tests | [test/](test/) | Starter ROS package lint checks. |
-| Detailed trace | [docs/TAG_ROUTE_TRACE.md](docs/TAG_ROUTE_TRACE.md) | Full launch tree, file dependencies, topics, timing, calibration and diagnostics. |
+Each run saves `~/.ros/route_reports/tag_route_<Los_Angeles_timestamp>.jsonl`.
+Generate waypoint-error CSV:
 
-The Python modules stay directly inside `robot_control/` so existing imports and ROS executable entry points continue to work. Documentation lives in `docs/`; launch files, configuration and tests keep their standard ROS package directories.
+```bash
+python3 scripts/parse_route_log.py /path/to/report.jsonl --output route_report
+```
+
+For trajectory CSV and SVG/PNG plots, install the plotting dependency and supply
+measured tag poses (metres, outward normal heading counterclockwise from world +x):
+
+```bash
+python3 -m pip install -r scripts/requirements-plot.txt
+python3 scripts/parse_route_log.py /path/to/report.jsonl --tag-map tags.json --output route_report
+```
+
+`tags.json` format (replace these examples; include route tags 9, 8, 7 and 5):
+
+```json
+{"tags":{"tag_9":{"x_m":2.0,"y_m":0.0,"normal_yaw_deg":180.0}}}
+```
+
+Choose the initial robot centre as world origin, +x forward and +y left. The
+camera must be level and forward-facing; tags must be upright with 0.1524 m black
+edges. Recalibrate the camera before trusting poses. Reports contain visual
+estimates, not independently measured physical error. Trajectory samples use
+0.5 s spacing (`--interval` overrides it); tracking gaps remain gaps. Partial
+runs produce only the waypoints actually reached. Old launch logs are not inputs.

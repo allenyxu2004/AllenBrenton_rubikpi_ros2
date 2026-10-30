@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract HW2_REPORT JSON from a saved ROS launch log (Matplotlib for plotting)."""
+"""Generate waypoint errors and trajectory plots from one route JSON-lines report."""
 
 import argparse
 import csv
@@ -10,18 +10,9 @@ import re
 
 
 def read_records(path):
-    records = []
-    for number, line in enumerate(path.read_text(errors='replace').splitlines(), 1):
-        if 'HW2_REPORT ' not in line:
-            continue
-        payload = line.split('HW2_REPORT ', 1)[1]
-        try:
-            record, _ = json.JSONDecoder().raw_decode(payload)
-        except ValueError as error:
-            raise ValueError(f'{path}:{number}: invalid report JSON') from error
-        if record.get('version') != 1:
-            raise ValueError(f'{path}:{number}: unsupported report version')
-        records.append(record)
+    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    if not records or records[0]['event'] != 'start':
+        raise ValueError('Report is missing its start record')
     return records
 
 
@@ -91,23 +82,15 @@ def main():
     parser.add_argument('--tag-map', type=Path, help='Measured tag world poses, JSON')
     parser.add_argument('--interval', type=float, default=0.5)
     parser.add_argument('--output', type=Path, default=Path('route_report'))
-    parser.add_argument('--run', help='Run UUID; default is the last run in the file')
     args = parser.parse_args()
     if not math.isfinite(args.interval) or args.interval <= 0:
         parser.error('--interval must be finite and positive')
     records = read_records(args.log)
-    if not records:
-        parser.error('No HW2_REPORT records found; use logs from the updated controller')
-    run = args.run or records[-1]['run']
-    records = [r for r in records if r['run'] == run]
-    if not records or records[0]['event'] != 'start':
-        parser.error('Selected run is missing its start record; capture the entire launch')
     args.output.mkdir(parents=True, exist_ok=True)
-    print(f'Run: {run}')
     arrivals = [r for r in records if r['event'] == 'arrival']
     write_csv(args.output / 'waypoint_errors.csv', arrivals,
               ['stage', 'tag', 'elapsed_s', 'source_stamp_s', 'target_distance_m',
-               'position_error_m', 'heading_error_deg', 'goal_right_m', 'goal_forward_m'])
+               'position_error_m', 'heading_error_deg'])
     for r in arrivals:
         print(f"Stage {r['stage']} {r['tag']}: {r['position_error_m']:.4f} m, "
               f"{r['heading_error_deg']:+.2f} deg (estimated goal residual)")
@@ -160,7 +143,8 @@ def main():
             write_trajectory_plot(args.output / 'trajectory.svg', samples, tags)
         except RuntimeError as error:
             parser.exit(1, f'{error}\n')
-        print(f'Wrote {len(samples)} trajectory dots, trajectory.svg and trajectory.png to {args.output}')
+        print(f'Wrote {len(samples)} trajectory dots, trajectory.svg and trajectory.png '
+              f'to {args.output}')
     else:
         print('No usable mapped observations; no trajectory image generated.')
     if missing:

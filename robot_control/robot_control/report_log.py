@@ -1,26 +1,43 @@
-"""Automatically named, line-flushed report files, independent of ROS logging."""
+"""One JSON-lines report per run, named in Los Angeles time."""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
+import json
 from pathlib import Path
-
+from zoneinfo import ZoneInfo
 
 REPORT_TIMEZONE = ZoneInfo('America/Los_Angeles')
 
 
 class ReportLog:
-    """Keep one exclusive report file per controller run."""
+    def __init__(self, directory, logger):
+        self.logger = logger
+        self.stream = None
+        try:
+            directory = Path(directory).expanduser()
+            directory.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(REPORT_TIMEZONE).strftime('%Y%m%dT%H%M%S.%f%z')
+            self.path = directory / f'tag_route_{stamp}.jsonl'
+            self.stream = self.path.open('x', encoding='utf-8', buffering=1)
+            logger.info(f'Automatic report log: {self.path}')
+        except OSError as error:
+            logger.error(f'Cannot create report; stdout only: {error}')
 
-    def __init__(self, directory, node_name, run_id):
-        directory = Path(directory).expanduser()
-        directory.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(REPORT_TIMEZONE).strftime('%Y%m%dT%H%M%S.%f%z')
-        self.path = directory / f'{node_name}_{timestamp}_{run_id[:8]}.log'
-        self.stream = self.path.open('x', encoding='utf-8', buffering=1)
-
-    def write(self, line):
-        """Flush each full record so it can be parsed during a run."""
-        self.stream.write(line + '\n')
+    def write(self, record):
+        line = json.dumps(record, allow_nan=False)
+        if self.stream is None:
+            self.logger.info(line)
+            return
+        try:
+            self.stream.write(line + '\n')
+        except OSError as error:
+            self.logger.error(f'Report write failed; stdout only: {error}')
+            self.close()
+            self.logger.info(line)
 
     def close(self):
-        self.stream.close()
+        if self.stream is not None:
+            try:
+                self.stream.close()
+            except OSError as error:
+                self.logger.error(f'Report close failed: {error}')
+            self.stream = None

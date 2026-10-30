@@ -3,7 +3,7 @@ from typing import NamedTuple, Optional
 
 
 class RouteStep(NamedTuple):
-    """One route action; None distance uses the normal target_distance parameter."""
+    """One route action; None distance uses TARGET_DISTANCE_M."""
 
     action: str
     tag_id: int
@@ -22,12 +22,21 @@ STAGES = [
     RouteStep('approach', 9, distance=1.5),
 ]
 
-# Same settings as the working standalone approach_tag command, except the
-# route's normal standoff is 0.5 m. ROS parameter overrides still take priority.
-ROUTE_DEFAULTS = {
-    'target_distance': 0.5,
-    'min_command': 0.08,
-    'max_command': 0.15,
-    'max_duration': 60.0,
-}
+# Firmware commands, not m/s. Pivots use the existing HW1 calibration.
+TARGET_DISTANCE_M = 0.5
+MIN_COMMAND = 0.08
+MAX_COMMAND = 0.15
+APPROACH_TIMEOUT_SECONDS = 60.0
 ALIGNMENT_TIMEOUT_SECONDS = 30.0
+DRIVE_SECONDS = 3.5
+PAUSE_SECONDS = 0.3
+FORWARD_ERROR_OFFSET_M = 0.05
+POSE_TIMEOUT_SECONDS = 0.6
+LOSS_GRACE_SECONDS = 1.5
+CAMERA_FRAME = 'camera_frame'
+# Forward-facing camera; no lateral/vertical offset or mounting rotation.
+CAMERA_OFFSET_FROM_ROBOT_CENTER_M = 3.5 * 0.0254
+CONTROL_PERIOD_SECONDS = 0.05
+PROGRESS_LOG_SECONDS = 1.0
+MIN_QUATERNION_NORM = 1e-6
+REPORT_DIRECTORY = '~/.ros/route_reports'
