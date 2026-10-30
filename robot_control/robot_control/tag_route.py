@@ -44,6 +44,7 @@ class TagRoute(ApproachTag):
         """Stop at the end, or prepare the next target after a short pause."""
         self.stage_index += 1
         if self.stage_index == len(STAGES):
+            self.report_event('complete')
             self.finished = True
             self.get_logger().info('Route complete; remaining stopped 1.5 m from tag 9')
             return
