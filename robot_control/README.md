@@ -23,7 +23,7 @@ optional diagnostic distance reporter. The ROS environment and the camera/AprilT
 | Motion policies | [approach_policy.py](robot_control/approach_policy.py), [square_approach.py](robot_control/square_approach.py), [tag_route_steps.py](robot_control/tag_route_steps.py) | Basic approach/pulse timing, square-on approach geometry, and turn-only alignment respectively. |
 | Hardware | [motor_control.py](robot_control/motor_control.py), [kinematic_control.py](robot_control/kinematic_control.py) | Serial bridge and the calibrated wheel/pivot constants used by these policies. |
 | Launch | [launch/](launch/) | Starts the camera, detector, reporting, motor bridge and route controller. |
-| Tests | [test/](test/) | Hardware-independent motion and route tests plus package lint checks. |
+| Tests | [test/](test/) | Starter ROS package lint checks. |
 | Detailed trace | [docs/TAG_ROUTE_TRACE.md](docs/TAG_ROUTE_TRACE.md) | Full launch tree, file dependencies, topics, timing, calibration and diagnostics. |
 
 The Python modules stay directly inside `robot_control/` so existing imports and ROS executable entry points continue to work. Documentation lives in `docs/`; launch files, configuration and tests keep their standard ROS package directories.

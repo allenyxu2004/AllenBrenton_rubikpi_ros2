@@ -52,8 +52,6 @@ class AlignTagPolicy(ApproachPolicy):
 
     def _settle_centered(self, now):
         """Require a stable centered observation before marking this step done."""
-        self.tracking = True
-        self.lost_since = None
         self.pivot_started_at = None
         if self.centered_since is None:
             self.centered_since = now

@@ -148,7 +148,7 @@ Approach distances are robot-center planar standoffs along the tag's normal, sub
 
 Camera frames at 10 Hz and controller ticks at 20 Hz are separate clocks. A tick can reuse a still-fresh pose; lack of a new pose on every tick is not itself a tracking failure. Repeated/out-of-order source timestamps do not refresh tracking. Planned pauses do not publish forward commands, and they do not disable freshness checks.
 
-## 5. Diagnostics and relevant tests
+## 5. Diagnostics
 
 With vision running, these commands distinguish detector output from controller behavior:
 
@@ -164,13 +164,9 @@ Look for detection ID 9 and advancing TF timestamps. A `tag_distance` log for `t
 
 `STOP: Tag lost or stale; restart controller to retry` means the controller previously tracked the target, then did not recover acceptable fresh observations within the grace period. The log alone cannot distinguish detector dropout, camera interruption, or timestamp rejection. A route failure does not automatically advance or restart the route.
 
-| Test file | Coverage |
-| --- | --- |
-| [test_tag_route_steps.py](../../robot_control/test/test_tag_route_steps.py) | Route order/distance override, left search pulses, centering success, brief loss recovery, latched loss and search timeout. |
-| [test_approach_policy.py](../../robot_control/test/test_approach_policy.py) | Shared steering, slowdown, pauses, calibrated turn timing and stop behavior. |
-| [test_square_approach.py](../../robot_control/test/test_square_approach.py) | Square-goal geometry and approach behavior. The visibility cutoff is consistently 20 degrees. |
-
-These source-level checks do not validate physical braking distance, camera calibration accuracy, or the installed robot overlay. The final launch command starts autonomous control; run it with the first target visible and no competing motor-command publisher.
+Physical braking distance, camera calibration accuracy and the installed robot overlay
+need verification on the robot. The launch starts autonomous control; run it with
+the first target visible and no competing motor-command publisher.
 
 Shared safety, interval timing, pivot and forward helpers live in `ApproachPolicy`.
 Square and alignment policies use these helpers directly, without synthetic ranges.

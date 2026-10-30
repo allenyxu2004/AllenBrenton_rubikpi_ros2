@@ -21,7 +21,6 @@ def square_goal(x, z, quaternion, standoff):
     AprilTag PnP's +Z normal points out of the printed face toward the viewer.
     x/z already include the camera-to-robot-centre translation.
     """
-    qx, qy, qz, qw = quaternion
     norm = math.sqrt(sum(v * v for v in quaternion))
     if not all(math.isfinite(v) for v in (x, z, *quaternion)) or norm < MIN_QUATERNION_NORM:
         raise ValueError('Invalid tag orientation')

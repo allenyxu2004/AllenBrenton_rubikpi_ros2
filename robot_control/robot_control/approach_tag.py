@@ -232,12 +232,12 @@ class ApproachTag(Node):
             self.last_log = now
 
 
-def main(args=None):
-    """Run the standalone approach controller and stop cleanly on exit."""
+def run_controller(controller_type, args=None):
+    """Run a motor controller and send a stop command during shutdown."""
     rclpy.init(args=args)
     node = None
     try:
-        node = ApproachTag()
+        node = controller_type()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
@@ -248,3 +248,8 @@ def main(args=None):
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
+
+def main(args=None):
+    """Run the standalone approach controller."""
+    run_controller(ApproachTag, args)

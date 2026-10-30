@@ -1,9 +1,7 @@
 """Run route steps using the same ROS controller as standalone approach_tag."""
 import time
 
-import rclpy
-
-from robot_control.approach_tag import ApproachTag
+from robot_control.approach_tag import ApproachTag, run_controller
 from robot_control.route_config import ALIGNMENT_TIMEOUT_SECONDS, ROUTE_DEFAULTS, STAGES
 from robot_control.tag_route_steps import AlignTagPolicy
 from robot_control.approach_policy import Outcome
@@ -31,12 +29,8 @@ class TagRoute(ApproachTag):
         # Keep freshness checks, motor safety, command publishing and logging
         # in ApproachTag. The route does not duplicate that control logic.
         super().tick()
-        if self._step_succeeded():
+        if self.policy.outcome is Outcome.SUCCEEDED:
             self._advance_route()
-
-    def _step_succeeded(self):
-        """Distinguish arrival from latched errors; errors never skip a target."""
-        return self.policy.outcome is Outcome.SUCCEEDED
 
     def _advance_route(self):
         """Stop at the end, or prepare the next target after a short pause."""
@@ -79,18 +73,5 @@ class TagRoute(ApproachTag):
 
 
 def main(args=None):
-    """Spin the route controller and send a stop command during shutdown."""
-    rclpy.init(args=args)
-    node = None
-    try:
-        node = TagRoute()
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if node is not None:
-            if rclpy.ok():
-                node.publish_command()
-            node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    """Run the route controller with shared shutdown handling."""
+    run_controller(TagRoute, args)
