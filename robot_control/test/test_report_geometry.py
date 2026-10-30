@@ -80,5 +80,7 @@ class ReportTests(unittest.TestCase):
             subprocess.run([sys.executable, str(SCRIPT), str(log), '--tag-map',
                             str(tag_map), '--output', str(root / 'report')], check=True)
             self.assertIn('0.02', (root / 'report/waypoint_errors.csv').read_text())
-            self.assertIn('<circle', (root / 'report/trajectory.svg').read_text())
+            self.assertIn('<svg', (root / 'report/trajectory.svg').read_text())
+            self.assertEqual((root / 'report/trajectory.png').read_bytes()[:8],
+                             b'\x89PNG\r\n\x1a\n')
             self.assertIn('0.0,0.0,0.0', (root / 'report/trajectory.csv').read_text())

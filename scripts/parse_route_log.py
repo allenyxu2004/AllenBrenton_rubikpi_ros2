@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Extract HW2_REPORT JSON from a saved ROS launch log (standard library only)."""
+"""Extract HW2_REPORT JSON from a saved ROS launch log (Matplotlib for plotting)."""
 
 import argparse
 import csv
-import html
 import json
 import math
 from pathlib import Path
@@ -52,36 +51,38 @@ def write_csv(path, rows, fields):
         writer.writerows(rows)
 
 
-def write_svg(path, samples, tags):
-    points = [(r['x_m'], r['y_m']) for r in samples]
-    points += [(t['x_m'], t['y_m']) for t in tags.values()]
-    xs, ys = zip(*points)
-    xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
-    scale = 600 / max(xmax-xmin, ymax-ymin, 1)
-    def xy(x, y):
-        return 70 + (x-xmin)*scale, 710 - (y-ymin)*scale
-    elements = ['<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800">',
-                '<rect width="800" height="800" fill="white"/>',
-                '<text x="30" y="30" font-size="18">Visual estimated trajectory (metres; +x right, +y up)</text>',
-                '<text x="30" y="55">Blue dots: sampled robot positions; red squares: measured tags</text>']
-    for row in samples:
-        x, y = xy(row['x_m'], row['y_m'])
-        label = f"t={row['elapsed_s']:.2f}s x={row['x_m']:.3f} y={row['y_m']:.3f}"
-        elements.append(f'<circle cx="{x}" cy="{y}" r="4" fill="steelblue"><title>{label}</title></circle>')
-    for name, tag in tags.items():
-        x, y = xy(tag['x_m'], tag['y_m'])
-        elements.append(f'<rect x="{x-4}" y="{y-4}" width="8" height="8" fill="red"/>')
-        elements.append(f'<text x="{x+8}" y="{y}">{html.escape(name)}</text>')
-    # Coordinate ticks retain the same scale on both axes.
-    for i in range(6):
-        xval = xmin + (xmax-xmin)*i/5
-        yval = ymin + (ymax-ymin)*i/5
-        x, _ = xy(xval, ymin)
-        _, y = xy(xmin, yval)
-        elements.append(f'<text x="{x}" y="735" font-size="12">{xval:.2f}</text>')
-        elements.append(f'<text x="10" y="{y}" font-size="12">{yval:.2f}</text>')
-    elements.append('</svg>')
-    path.write_text('\n'.join(elements))
+def write_trajectory_plot(path, samples, tags):
+    """Render equal-scale world coordinates without requiring a display session."""
+    try:
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+    except ImportError as error:
+        raise RuntimeError(
+            'Plotting requires Matplotlib: '
+            'python3 -m pip install -r scripts/requirements-plot.txt. '
+            'CSV outputs have already been saved.') from error
+
+    figure = Figure(figsize=(8, 8), layout='constrained')
+    FigureCanvasAgg(figure)
+    axes = figure.subplots()
+    axes.scatter([row['x_m'] for row in samples],
+                 [row['y_m'] for row in samples],
+                 s=22, color='steelblue', label='Estimated robot position', zorder=3)
+    if tags:
+        axes.scatter([tag['x_m'] for tag in tags.values()],
+                     [tag['y_m'] for tag in tags.values()],
+                     s=48, marker='s', color='firebrick', label='Measured tags', zorder=4)
+        for name, tag in tags.items():
+            axes.annotate(name, (tag['x_m'], tag['y_m']),
+                          xytext=(7, 7), textcoords='offset points')
+    axes.set(title='Visual estimated trajectory', xlabel='World x (m)', ylabel='World y (m)')
+    axes.set_aspect('equal', adjustable='box')
+    axes.margins(0.15)
+    axes.grid(True, alpha=0.3)
+    axes.legend()
+    # Dots only: do not draw connecting lines through tracking gaps.
+    figure.savefig(path)
+    figure.savefig(path.with_suffix('.png'), dpi=200)
 
 
 def main():
@@ -155,8 +156,11 @@ def main():
     write_csv(args.output / 'trajectory.csv', samples,
               ['sample_time_s', 'elapsed_s', 'source_stamp_s', 'tag', 'x_m', 'y_m', 'heading_rad'])
     if samples:
-        write_svg(args.output / 'trajectory.svg', samples, tags)
-        print(f'Wrote {len(samples)} trajectory dots and trajectory.svg to {args.output}')
+        try:
+            write_trajectory_plot(args.output / 'trajectory.svg', samples, tags)
+        except RuntimeError as error:
+            parser.exit(1, f'{error}\n')
+        print(f'Wrote {len(samples)} trajectory dots, trajectory.svg and trajectory.png to {args.output}')
     else:
         print('No usable mapped observations; no trajectory image generated.')
     if missing:

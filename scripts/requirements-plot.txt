@@ -1,0 +1,2 @@
+# Only needed on the machine generating trajectory plots.
+matplotlib>=3.6
