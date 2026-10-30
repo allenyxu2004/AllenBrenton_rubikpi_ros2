@@ -66,11 +66,30 @@ def write_trajectory_plot(path, samples, tags):
         for name, tag in tags.items():
             axes.annotate(name, (tag['x_m'], tag['y_m']),
                           xytext=(7, 7), textcoords='offset points')
+    # HW2 world poses, with the experiment's 1 m per coordinate unit.
+    # Start and finish share a position and heading, so use one marker for both.
+    waypoints = [
+        ('WP1 / WP4\nstart / return', 0.0, 0.0, 0.0),
+        ('WP2', 1.0, 0.0, 0.0),
+        ('WP3', 1.0, 2.0, math.pi),
+    ]
+    axes.scatter([w[1] for w in waypoints], [w[2] for w in waypoints],
+                 s=140, marker='D', facecolors='none', edgecolors='darkorange',
+                 linewidths=2, label='Ideal HW2 waypoints (1 unit = 1 m)', zorder=5)
+    for label, x, y, heading in waypoints:
+        start = x == 0.0 and y == 0.0
+        axes.annotate(label, (x, y), xytext=(-12, -24) if start else (8, -24),
+                      ha='right' if start else 'left',
+                      textcoords='offset points', color='darkorange')
+        axes.annotate('', xy=(x + 0.18 * math.cos(heading),
+                              y + 0.18 * math.sin(heading)), xytext=(x, y),
+                      arrowprops=dict(arrowstyle='->', color='darkorange', lw=2),
+                      zorder=6)
     axes.set(title='Visual estimated trajectory', xlabel='World x (m)', ylabel='World y (m)')
     axes.set_aspect('equal', adjustable='box')
     axes.margins(0.15)
     axes.grid(True, alpha=0.3)
-    axes.legend()
+    axes.legend(loc='upper left', fontsize=9)
     # Dots only: do not draw connecting lines through tracking gaps.
     figure.savefig(path)
     figure.savefig(path.with_suffix('.png'), dpi=200)
