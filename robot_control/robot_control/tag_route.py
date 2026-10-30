@@ -46,6 +46,7 @@ class TagRoute(Node):
         self.measurement = None
         self.last_received = None
         self.source_stamp = None
+        self.observation_time = None
         self.reported_stop = False
         self.last_log = -math.inf
         self.get_logger().info(
@@ -87,6 +88,9 @@ class TagRoute(Node):
             self.measurement = (math.hypot(p.x, p.y, forward), math.atan2(p.x, forward))
             self.source_stamp = stamp
             self.last_received = time.monotonic()
+            # Compare capture time with turn settling on the same clock.
+            source_age = self.get_clock().now().nanoseconds * 1e-9 - stamp
+            self.observation_time = self.last_received - source_age
 
     def pose_is_fresh(self, now):
         source_age = (self.get_clock().now().nanoseconds * 1e-9 - self.source_stamp
@@ -107,7 +111,7 @@ class TagRoute(Node):
             self.policy.stop('Another motor_commands publisher detected')
         fresh = self.pose_is_fresh(now)
         distance, bearing = self.measurement or (None, None)
-        left, right = self.policy.step(now, bearing, fresh)
+        left, right = self.policy.step(now, bearing, fresh, self.observation_time)
         self.publish_command(left, right)
         if self.policy.reason:
             if not self.reported_stop:

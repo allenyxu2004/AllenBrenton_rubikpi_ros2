@@ -1,5 +1,12 @@
 # HW2 tag route
 
+Corrective pivots use nominal 0.05 s pulses. After a turn, the controller
+publishes zero commands for at least 0.4 s and waits for a target image captured
+after that settling period before turning again or driving. Delayed images
+captured during the turn cannot trigger another correction. Initial tag search
+can continue without observations, with the same minimum pause between turns.
+Pulse timing is limited by the ROS timer and serial bridge scheduling.
+
 Build and run on the robot:
 
 ```bash

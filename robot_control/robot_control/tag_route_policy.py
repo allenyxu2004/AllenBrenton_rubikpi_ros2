@@ -6,19 +6,16 @@ from enum import Enum
 from robot_control import route_config as cfg
 
 from robot_control.kinematic_control import (
-    LEFT_TURN_LEFT, LEFT_TURN_RIGHT, LEFT_TURN_RATE,
-    RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT, RIGHT_TURN_RATE, FORWARD_LEFT, FORWARD_RIGHT,
+    LEFT_TURN_LEFT, LEFT_TURN_RIGHT,
+    RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT, FORWARD_LEFT, FORWARD_RIGHT,
 )
 
 
 MAX_BEARING_RADIANS = math.radians(20)
 ALIGN_ENTER_RADIANS = math.radians(8)
 ALIGN_EXIT_RADIANS = math.radians(3)
-PIVOT_PAUSE_SECONDS = 0.2
-MIN_PIVOT_SECONDS = 0.05
-MAX_PIVOT_SECONDS = 0.12
-PIVOT_CORRECTION_FRACTION = 0.5
-PIVOT_RESIDUAL_RADIANS = math.radians(2)
+PIVOT_PAUSE_SECONDS = 0.4
+PIVOT_PULSE_SECONDS = 0.05
 FORWARD_GAIN = 0.25
 STEERING_GAIN = 0.12
 MAX_STEERING_FRACTION = 0.5
@@ -68,6 +65,44 @@ class MotionPolicy:
         self.tracking = False
         self.reason = None
         self.outcome = Outcome.RUNNING
+        self.last_turn_direction = None
+        self.turn_pause_until = None
+
+    def pause_after_turn(self, now):
+        """Stop before changing motion and require a post-settle camera frame."""
+        self.last_turn_direction = None
+        self.pivot_started_at = None
+        self.turn_pause_until = now + PIVOT_PAUSE_SECONDS
+
+    def step(self, now, bearing=None, fresh=False, observation_time=None):
+        """Gate all motion after a turn, including transitions into driving.
+
+        observation_time is the image capture time mapped onto the monotonic
+        clock, not the time its delayed TF message arrived.
+        """
+        if (self.last_turn_direction is not None
+                and self.pivot_started_at is not None
+                and now - self.pivot_started_at >= self.pivot_duration):
+            self.pause_after_turn(now)
+        if self.turn_pause_until is not None:
+            # Keep timeouts and tracking-loss stops active while stationary.
+            if not self.ready(now, fresh, allow_search=True):
+                return 0.0, 0.0
+            # Initial search must remain possible before any tag is visible.
+            # Once tracking starts, every turn requires a settled observation.
+            if (now < self.turn_pause_until or (self.tracking and (
+                    observation_time is None or not math.isfinite(observation_time)
+                    or observation_time < self.turn_pause_until))):
+                return 0.0, 0.0
+            self.turn_pause_until = None
+
+        left, right = self._step(now, bearing, fresh)
+        direction = (1 if left > 0 else -1) if left * right < 0 else None
+        if self.last_turn_direction is not None and direction != self.last_turn_direction:
+            self.pause_after_turn(now)
+            return 0.0, 0.0
+        self.last_turn_direction = direction
+        return left, right
 
     def stop(self, reason, outcome=Outcome.FAILED):
         if self.reason is None:
@@ -141,12 +176,9 @@ class MotionPolicy:
         if now < self.pivot_pause_until:
             return 0.0, 0.0
         if self.pivot_started_at is None:
-            rate = RIGHT_TURN_RATE if direction > 0 else LEFT_TURN_RATE
-            # Half the estimated correction, capped at 0.12 s. The 20 Hz
-            # timer quantizes pulses; remeasure after a 0.2 s stop.
-            self.pivot_duration = max(MIN_PIVOT_SECONDS, min(
-                MAX_PIVOT_SECONDS, PIVOT_CORRECTION_FRACTION
-                * (abs(bearing) - PIVOT_RESIDUAL_RADIANS) / rate))
+            # Keep each correction to one nominal 20 Hz control tick. The
+            # step wrapper enforces settling and a new image before moving.
+            self.pivot_duration = PIVOT_PULSE_SECONDS
             self.pivot_started_at = now
             self.pivot_direction = direction
         return ((RIGHT_TURN_LEFT, RIGHT_TURN_RIGHT) if direction > 0
@@ -203,7 +235,7 @@ class SquareApproachPolicy(MotionPolicy):
     def update_goal(self, x, z, quaternion):
         self.goal = square_goal(x, z, quaternion, self.target)
 
-    def step(self, now, bearing=None, fresh=False):
+    def _step(self, now, bearing=None, fresh=False):
         if not self.ready(now, fresh and self.goal is not None):
             self.settled_since = None
             return 0., 0.
@@ -258,7 +290,7 @@ class AlignTagPolicy(MotionPolicy):
         self.search_pause_until = 0.0
         self.centered_since = None
 
-    def step(self, now, bearing=None, fresh=False):
+    def _step(self, now, bearing=None, fresh=False):
         """Return one pair of wheel commands from the latest target observation."""
         if not self.ready(now, fresh, allow_search=True):
             self.centered_since = None
