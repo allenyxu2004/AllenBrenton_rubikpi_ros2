@@ -8,6 +8,11 @@
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
+  <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>robot_vision_camera</exec_depend>
+  <exec_depend>apriltag_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>

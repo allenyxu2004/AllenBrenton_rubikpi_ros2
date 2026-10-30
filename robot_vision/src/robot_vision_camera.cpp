@@ -5,7 +5,7 @@ RobotVisionCamera::RobotVisionCamera(const std::string & name)
 {
   getROSParams();
 
-  // Use Sensor Data QoS (Best Effort) for camera topics
+  // Reliable delivery for large image samples and matching CameraInfo.
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
 
   // Create publishers for raw, compressed images, and camera info
@@ -236,6 +236,19 @@ void RobotVisionCamera::prepareRemap() {
   cv::Mat newK = getOptimalNewCameraMatrix(K, D, imageSize, 0.0, imageSize, 0);
   cv::initUndistortRectifyMap(K, D, cv::Mat(), newK, imageSize, CV_16SC2, map1, map2);
 
+  // The output image uses newK, so pose estimation must use the same intrinsics.
+  std::fill(camera_info_msg_.p.begin(), camera_info_msg_.p.end(), 0.0);
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      camera_info_msg_.k[i * 3 + j] = newK.at<double>(i, j);
+      camera_info_msg_.p[i * 4 + j] = newK.at<double>(i, j);
+    }
+  }
+  std::fill(camera_info_msg_.d.begin(), camera_info_msg_.d.end(), 0.0);
+  std::fill(camera_info_msg_.r.begin(), camera_info_msg_.r.end(), 0.0);
+  camera_info_msg_.r[0] = camera_info_msg_.r[4] = camera_info_msg_.r[8] = 1.0;
+
+
   RCLCPP_INFO(this->get_logger(),
     "Rectify ready. size=%dx%d, D=%dx%d, K=(%g,%g,%g | %g,%g,%g | %g,%g,%g)",
     imageSize.width, imageSize.height, D.rows, D.cols,
@@ -419,7 +432,7 @@ GstFlowReturn RobotVisionCamera::processData(GstElement * sink, RobotVisionCamer
     cam_msg->header.frame_id = "camera_frame";
     cam_msg->height = frame_rgb.rows;
     cam_msg->width = frame_rgb.cols;
-    cam_msg->encoding = "rgb8";
+    cam_msg->encoding = node->output_format == "BGR" ? "bgr8" : "rgb8";
     cam_msg->is_bigendian = false;
     cam_msg->step = static_cast<sensor_msgs::msg::Image::_step_type>(frame_rgb.step);
     cam_msg->data.assign(frame_rgb.datastart, frame_rgb.dataend);
