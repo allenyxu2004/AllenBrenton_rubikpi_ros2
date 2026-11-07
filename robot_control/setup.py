@@ -30,7 +30,6 @@ setup(
     maintainer_email='chl235@ucsd.edu',
     description='Robot motor controller with keyboard input for ROS2',
     license='MIT',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'tag_route = robot_control.tag_route:main',
