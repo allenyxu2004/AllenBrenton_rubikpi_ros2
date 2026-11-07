@@ -1,0 +1,44 @@
+hw3_slam:
+  ros__parameters:
+    # Run settings; launch arguments can optionally override these.
+    drive: false  # true enables autonomous movement at startup.
+    shape: square  # square or octagon.
+    side_m: 0.9  # Length of each polygon edge, metres.
+    laps: 1  # Number of complete polygon circuits.
+
+    # Defaults reproduce the HW1 calibration; remeasure on your floor/battery.
+    forward_left: 0.25  # Left motor command when driving forward.
+    forward_right: 0.2  # Right motor command when driving forward.
+    forward_speed_mps: 0.29845  # Measured forward speed, m/s.
+    left_left: -0.45  # Left motor command when pivoting left.
+    left_right: 0.3  # Right motor command when pivoting left.
+    left_rate_rps: 1.588267  # Measured left pivot rate magnitude, rad/s.
+    right_left: 0.45  # Left motor command when pivoting right.
+    right_right: -0.3  # Right motor command when pivoting right.
+    right_rate_rps: 1.828518  # Measured right pivot rate magnitude, rad/s.
+
+    # Level, forward-facing camera. Positive lateral offset/yaw means left.
+    camera_frame: camera_frame  # Expected parent frame of tag transforms.
+    camera_forward_m: 0.0889  # Camera distance ahead of robot center, m.
+    camera_left_m: 0.0  # Camera distance left of robot center, m.
+    camera_yaw_rad: 0.0  # Camera heading relative to robot; left positive, rad.
+
+    # Standard deviations/noise densities are starting guesses, not fitted data.
+    measurement_noise_m: 0.04  # Base tag position standard deviation, m.
+    range_noise_fraction: 0.02  # Additional standard deviation per metre of range.
+    translation_noise: 0.08  # Motion noise amplitude, m/sqrt(s).
+    rotation_noise: 0.20  # Turning noise amplitude, rad/sqrt(s).
+    innovation_gate: 9.21  # Reject observations above this squared Mahalanobis distance.
+
+    pulse_s: 0.15  # Maximum duration of each movement pulse, s.
+    settle_s: 0.35  # Wait after stopping before accepting camera frames, s.
+    observe_s: 0.25  # Extra observation window before the next movement, s.
+    position_tolerance_m: 0.08  # Distance close enough to reach a corner, m.
+    heading_tolerance_rad: 0.10  # Heading error allowed before driving, rad.
+    max_observation_age_s: 0.6  # Reject camera frames older than this, s.
+    max_blind_s: 12.0  # Stop after this long without accepted tag observations, s.
+    route_timeout_s: 600.0  # Maximum time allowed for the whole run, s.
+    max_position_std_m: 0.6  # Stop if x or y uncertainty exceeds this standard deviation, m.
+    max_heading_std_rad: 0.8  # Stop if heading uncertainty exceeds this standard deviation, rad.
+    max_tag_range_m: 4.0  # Ignore tags beyond this planar distance from robot, m.
+    log_directory: '~/.ros/hw3_slam'  # Folder for per-run JSONL logs.

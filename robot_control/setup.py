@@ -13,8 +13,11 @@ setup(
         ('share/' + package_name + '/launch', [
             'launch/robot_teleop_launch.py',
             'launch/tag_route.launch.py',
+            'launch/hw3_slam.launch.py',
         ]),
-        ('share/' + package_name + '/config', ['config/waypoints.txt']),
+        ('share/' + package_name + '/config', [
+            'config/waypoints.txt', 'config/hw3_slam.yaml', 'config/hw3_tags.yaml',
+        ]),
     ],
     install_requires=[
         'setuptools',
@@ -31,6 +34,8 @@ setup(
     entry_points={
         'console_scripts': [
             'tag_route = robot_control.tag_route:main',
+            'hw3_slam = robot_control.slam_node:main',
+            'hw3_slam_plot = robot_control.slam.evaluate:main',
             'motor_control = robot_control.motor_control:main',
             'keyboard_control = robot_control.keyboard_control:main',
             'velocity_control = robot_control.velocity_control:main',
