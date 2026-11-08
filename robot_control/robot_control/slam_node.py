@@ -19,7 +19,7 @@ from tf2_msgs.msg import TFMessage
 
 from robot_control.slam.ekf import EkfSlam
 from robot_control.slam.observations import planar_observation, tag_id_from_frame
-from robot_control.slam.trajectory import action_to_goal, polygon_waypoints
+from robot_control.slam.trajectory import action_to_goal, action_to_heading, polygon_waypoints
 
 
 DEFAULTS = dict(
@@ -29,7 +29,7 @@ DEFAULTS = dict(
     forward_left=0.25, forward_right=0.2, forward_speed_mps=0.29845,
     left_left=-0.45, left_right=0.3, left_rate_rps=1.588267,
     right_left=0.45, right_right=-0.3, right_rate_rps=1.828518,
-    pulse_s=0.15, settle_s=0.35, observe_s=0.25,
+    pulse_s=0.15, settle_s=0.35, observe_s=0.25, lap_observe_s=1.0,
     position_tolerance_m=0.08, heading_tolerance_rad=0.10,
     max_observation_age_s=0.6, route_timeout_s=600.0,
     max_position_std_m=0.6, max_heading_std_rad=0.8,
@@ -52,6 +52,9 @@ class SlamNode(Node):
                               c['measurement_noise_m'], c['innovation_gate'])
         self.goals = polygon_waypoints(c['shape'], c['side_m'], c['laps'])
         self.corner = 0
+        self.corners_per_lap = 4 if c['shape'] == 'square' else 8
+        self.lap_phase = None  # At the closing corner: align, then observe.
+        self.lap_observe_until = 0.0
         self.finished = False
         self.fault = None
         self.stamps = {}
@@ -186,18 +189,39 @@ class SlamNode(Node):
 
     def decide(self, now):
         c = self.cfg
-        action, error = action_to_goal(
-            self.filter.x[:3], self.goals[self.corner],
-            c['position_tolerance_m'], c['heading_tolerance_rad'])
+        if self.lap_phase == 'observe':
+            if now < self.lap_observe_until:
+                return
+            # Observations during the pause are now included in this lap's
+            # arrival snapshot, which the offline evaluator uses for errors.
+            self.lap_phase = None
+            self.finish_corner()
+            return
+        if self.lap_phase == 'align':
+            # Startup defines heading zero. Rotate without chasing position
+            # corrections while trying to reacquire the starting view.
+            action, error = action_to_heading(
+                self.filter.x[2], 0.0, c['heading_tolerance_rad'])
+        else:
+            action, error = action_to_goal(
+                self.filter.x[:3], self.goals[self.corner],
+                c['position_tolerance_m'], c['heading_tolerance_rad'])
         if action == 'arrived':
-            self.corner += 1
-            self.record('arrival', corner=self.corner, state=self.filter.x.tolist(),
-                        covariance=self.filter.P.tolist(), landmarks=self.filter.indices)
-            self.get_logger().info(f'Corner {self.corner}/{len(self.goals)} reached')
-            if self.corner == len(self.goals):
-                self.finished = True
-                self.record('complete')
-                self.get_logger().info('Route complete; remaining stopped')
+            if (self.corner + 1) % self.corners_per_lap == 0:
+                if self.lap_phase is None:
+                    self.lap_phase = 'align'
+                    self.get_logger().info('Lap closing: returning to startup heading')
+                else:
+                    # Each pivot already ends with settle_s + observe_s. This
+                    # extra stationary window gives the starting tags time to
+                    # update SLAM before the lap is declared complete.
+                    self.lap_phase = 'observe'
+                    self.lap_observe_until = now + c['lap_observe_s']
+                    self.next_decision = self.lap_observe_until
+                    self.record('lap_observation_start', corner=self.corner + 1)
+                    self.get_logger().info('Startup heading reached; observing before lap completion')
+            else:
+                self.finish_corner()
             return
         if action == 'forward':
             self.motion = (c['forward_speed_mps'], 0.0)
@@ -214,6 +238,17 @@ class SlamNode(Node):
         self.pulse_until = now + duration
         self.record('command', action=action, wheels=self.wheels,
                     speed=self.motion[0], turn_rate=self.motion[1], duration_s=duration)
+
+    def finish_corner(self):
+        """Record arrival after any end-of-lap alignment and observations."""
+        self.corner += 1
+        self.record('arrival', corner=self.corner, state=self.filter.x.tolist(),
+                    covariance=self.filter.P.tolist(), landmarks=self.filter.indices)
+        self.get_logger().info(f'Corner {self.corner}/{len(self.goals)} reached')
+        if self.corner == len(self.goals):
+            self.finished = True
+            self.record('complete')
+            self.get_logger().info('Route complete; remaining stopped')
 
     def publish_pose(self):
         message = PoseWithCovarianceStamped()

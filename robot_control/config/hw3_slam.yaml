@@ -33,6 +33,7 @@ hw3_slam:
     pulse_s: 0.15  # Maximum duration of each movement pulse, s.
     settle_s: 0.35  # Wait after stopping before accepting camera frames, s.
     observe_s: 0.25  # Extra observation window before the next movement, s.
+    lap_observe_s: 1.0  # Extra pause at startup heading before completing each lap, s.
     position_tolerance_m: 0.08  # Distance close enough to reach a corner, m.
     heading_tolerance_rad: 0.10  # Heading error allowed before driving, rad.
     max_observation_age_s: 0.6  # Reject camera frames older than this, s.

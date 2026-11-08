@@ -32,7 +32,15 @@ def action_to_goal(pose, goal, position_tolerance, heading_tolerance):
     distance = math.hypot(dx, dy)
     if distance <= position_tolerance:
         return 'arrived', distance
-    error = normalize_angle(math.atan2(dy, dx) - pose[2])
-    if abs(error) > heading_tolerance:
-        return ('left' if error > 0 else 'right'), abs(error)
+    action, error = action_to_heading(pose[2], math.atan2(dy, dx), heading_tolerance)
+    if action != 'arrived':
+        return action, error
     return 'forward', distance
+
+
+def action_to_heading(heading, target, tolerance):
+    """Select a pivot toward a target heading, including across +/-pi."""
+    error = normalize_angle(target - heading)
+    if abs(error) <= tolerance:
+        return 'arrived', abs(error)
+    return ('left' if error > 0 else 'right'), abs(error)

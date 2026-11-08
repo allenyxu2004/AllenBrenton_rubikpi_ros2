@@ -190,8 +190,11 @@ ros2 launch robot_control hw3_slam.launch.py \
 ```
 
 Run those commands separately, stopping each launch before starting the next.
-The controller returns to the starting position but does not enforce the initial
-heading at the final corner. On repeated laps it turns toward the first edge.
+At the final corner of every lap, the controller turns back to startup heading
+zero, then stays stopped for `lap_observe_s` (default 1 s) before recording the
+lap as complete. This gives initially visible tags a chance to correct the pose
+and map before the lap snapshot. Reacquisition is not guaranteed, and the pause
+ends even if no tag is detected. Subsequent laps continue from there.
 
 If observations are consistently rejected or the pose jumps, inspect
 calibration, extrinsics, timing, and printed tag size before relaxing thresholds.

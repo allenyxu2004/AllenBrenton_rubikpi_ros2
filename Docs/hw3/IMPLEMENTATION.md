@@ -135,3 +135,9 @@ tolerance. Returning landmarks can correct accumulated drift, including on later
 laps, but consistency depends on visibility and model quality. Small maps and
 reasonable initial drift are necessary for this EKF's local linearization.
 
+Each lap closes by pivoting to startup heading zero, then observing while
+stationary for `lap_observe_s`. The lap's arrival snapshot is recorded after this
+pause so the per-lap error calculation includes those corrections. No tag is
+required to appear during the pause; this restores the estimated viewing
+direction but cannot guarantee the original tag is physically in view.
+
