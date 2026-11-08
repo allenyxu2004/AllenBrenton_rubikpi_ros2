@@ -24,19 +24,33 @@ Copy/sync this updated repository to the robot's existing workspace before
 building. The commands below assume the checkout is
 `~/ros2_ws/src/AllenBrenton_rubikpi_ros2`; adjust that checkout path if necessary.
 
+Humble and Jazzy are ROS 2 distributions (named releases). This guide assumes
+Jazzy; verify it is installed on the robot before continuing:
+
 ```bash
 ssh ubuntu@192.168.1.61
+ls /opt/ros
+```
+
+If that lists `jazzy`, use the commands below. If it lists another distribution,
+use that name in the setup paths and `ros-<distribution>-foxglove-bridge` package.
+Do not install another ROS distribution just to match this guide.
+
+```bash
 cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
+echo "$ROS_DISTRO"  # Should print jazzy.
 sudo apt update
-sudo apt install python3-numpy python3-matplotlib python3-serial \
-  ros-humble-foxglove-bridge
+sudo apt install python3-numpy python3-serial \
+  ros-jazzy-foxglove-bridge
 colcon build --symlink-install
 source install/setup.bash
 ```
 
 The existing board setup must already provide `qtiqmmfsrc`, the AprilTag build
 dependencies, and serial access through the `dialout` group.
+NumPy is needed for the online filter; Matplotlib is only needed on the laptop
+for offline analysis.
 
 Stop any HW1/HW2 controller, keyboard teleop, or standalone serial script first.
 The HW3 launch starts its own camera, detector, motor bridge, and controller.
@@ -97,7 +111,7 @@ not modeled. This is a setup check, not a driving experiment.
 In a second SSH terminal:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash
 ros2 topic echo /slam/pose --once
 ros2 topic echo /tf --once
@@ -118,22 +132,24 @@ ROS parameter does not arm the controller.
 ## 4. Drive the square
 
 Measure and write down the startup robot pose for this run. Face along your
-chosen initial map +x direction, with a tag initially visible. Then run:
+chosen initial map +x direction. A tag need not be initially visible. Then run:
 
 ```bash
 ros2 launch robot_control hw3_slam.launch.py \
   drive:=true shape:=square side_m:=0.9 laps:=1
 ```
 
-This **starts autonomous movement** after the first accepted tag observation
-and a motor subscriber are present. Corners in the startup map frame are:
+This **starts autonomous movement** once a motor subscriber is present and the
+initial settling/observation window has elapsed, even without a visible tag.
+Until a tag is observed, pose prediction relies on the calibrated motion model.
+Corners in the startup map frame are:
 `(0.9,0)`, `(0.9,0.9)`, `(0,0.9)`, `(0,0)`. Travel is counterclockwise.
 
 Every decision uses the current SLAM pose. The controller pivots toward the next
 corner, then drives forward in short pulses. It stops between pulses, waits for
-mechanical settling, and accepts only images captured after settling. A missing
-tag is allowed briefly so the robot can turn toward another wall; after 12 s
-without accepted observations it stops and latches a fault. It also stops for
+mechanical settling, and accepts only images captured after settling. Without
+visible tags it continues using motion prediction; there is no no-tag timeout.
+It stops for
 excessive pose uncertainty, a motion callback gap, another command publisher,
 or the route time limit. A fault requires restarting the run.
 
@@ -185,11 +201,35 @@ fresh processed frame to arrive. The nominal 0.15 s pulse / 0.35 s settling /
 still use the existing calibrated motion primitives. The motion/noise model does
 not model acceleration or wheel slip; short-pulse rates may need remeasurement.
 
-## 6. Plot and measure errors
+## 6. Plot and measure errors on your laptop
 
 Each run writes a unique JSONL under `~/.ros/hw3_slam/`; the node prints its path.
 It records parameters, accepted/rejected observations, commands, arrivals, and
 the joint state/covariance every 0.2 s. Each completed lap has an arrival snapshot.
+
+After stopping the run, open a terminal on your **laptop**, outside SSH. Copy the
+logs from the robot:
+
+```bash
+mkdir -p ~/hw3_logs
+scp -r ubuntu@192.168.1.61:~/.ros/hw3_slam/. ~/hw3_logs/
+```
+
+From the repository root on your laptop, prepare the analysis environment once:
+
+```bash
+python3 -m venv ~/.venvs/hw3-analysis
+source ~/.venvs/hw3-analysis/bin/activate
+python -m pip install numpy matplotlib
+```
+
+For each new laptop terminal, activate that environment and, from the repository
+root, make the Python package available. No ROS installation is needed:
+
+```bash
+source ~/.venvs/hw3-analysis/bin/activate
+export PYTHONPATH="$PWD/robot_control"
+```
 
 Create a CSV using your actual measurements, with this header and one row per
 tag (ID, world x, world y):
@@ -202,22 +242,19 @@ For example, save it as `~/hw3_ground_truth.csv`. Do not pass it to the online
 SLAM node. Plot a run using its exact log path:
 
 ```bash
-ros2 run robot_control hw3_slam_plot \
-  ~/.ros/hw3_slam/REPLACE_WITH_RUN_square.jsonl
+python -m robot_control.slam.evaluate \
+  ~/hw3_logs/REPLACE_WITH_RUN_square.jsonl
 ```
 
 For quantitative comparison, supply the independently measured startup robot
-pose. Set the following shell variables to your measured numbers in metres and
-radians, then run:
+pose. Replace `X_METRES`, `Y_METRES`, and `YAW_RADIANS` with your measured startup
+numbers, then run on your laptop:
 
 ```bash
-read -p 'Measured startup world x (m): ' START_X
-read -p 'Measured startup world y (m): ' START_Y
-read -p 'Measured startup world heading (rad): ' START_YAW
-ros2 run robot_control hw3_slam_plot \
-  ~/.ros/hw3_slam/REPLACE_WITH_RUN_square.jsonl \
+python -m robot_control.slam.evaluate \
+  ~/hw3_logs/REPLACE_WITH_RUN_square.jsonl \
   --ground-truth ~/hw3_ground_truth.csv \
-  --start "$START_X" "$START_Y" "$START_YAW" \
+  --start X_METRES Y_METRES YAW_RADIANS \
   --output ~/hw3_square.png
 ```
 

@@ -10,6 +10,9 @@ Read the files in this order:
 | `slam_node.py` | ROS subscriptions/publishers, motor calibration parameters, pulse/settle timing, stop conditions, logging. |
 | `slam/evaluate.py` | Offline plots, frame alignment, landmark error CSV, per-lap means. |
 
+Run offline analysis on the laptop with NumPy and Matplotlib; ROS is not needed.
+The robot only needs NumPy for the filter and writes JSONL logs for transfer.
+
 `config/hw3_slam.yaml` lists every SLAM/controller parameter, including run
 settings, physical calibration, and tuning. Python retains fallback defaults.
 Optional launch arguments override only the values explicitly supplied.
@@ -113,6 +116,11 @@ The ROS node publishes at 20 Hz. It predicts using the previous commanded
 motion, then chooses the next action from the current SLAM estimate. It never
 opens the serial port itself. Firmware commands and predicted physical rates
 come from the same chosen primitive.
+
+No initial tag observation is required. Before discovering any landmarks, the
+filter only predicts motion and grows uncertainty. There is no no-tag timeout;
+the route-duration and pose-uncertainty limits still apply. A new tag initializes
+a map entry; subsequent sightings provide drift corrections.
 
 Motion is pulsed, followed by settling and an observation window. TF messages
 are applied only while stopped, and only if their image timestamps are after
