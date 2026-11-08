@@ -192,23 +192,8 @@ class SlamNode(Node):
         if self.lap_phase == 'observe':
             if now < self.lap_observe_until:
                 return
-            # Reobserving the starting tags can move the pose estimate away
-            # from the corner. Recheck BOTH goals before claiming completion.
-            position_action, _ = action_to_goal(
-                self.filter.x[:3], self.goals[self.corner],
-                c['position_tolerance_m'], c['heading_tolerance_rad'])
-            heading_action, _ = action_to_heading(
-                self.filter.x[2], 0.0, c['heading_tolerance_rad'])
-            if position_action != 'arrived':
-                self.lap_phase = None
-                self.record('lap_recheck', reason='position corrected outside tolerance')
-                self.get_logger().info('Pose corrected away from closing corner; approaching again')
-                return
-            if heading_action != 'arrived':
-                self.lap_phase = 'align'
-                self.record('lap_recheck', reason='heading corrected outside tolerance')
-                self.get_logger().info('Heading corrected outside tolerance; aligning again')
-                return
+            # Keep the corrections without commanding another return-to-start
+            # maneuver. The observation pause completes this lap.
             # Observations during the pause are now included in this lap's
             # arrival snapshot, which the offline evaluator uses for errors.
             self.lap_phase = None
