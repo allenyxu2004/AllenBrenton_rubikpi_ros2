@@ -8,6 +8,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
+
 def launch_slam(context):
     """Load YAML first; override only arguments explicitly supplied by the user."""
     overrides = {}
@@ -15,7 +16,10 @@ def launch_slam(context):
                              ('side_m', float), ('laps', int)]:
         value = LaunchConfiguration(name).perform(context)
         if value != '':
-            overrides[name] = ParameterValue(value, value_type=value_type)
+            # Keep the substitution so launch converts text to the requested
+            # type. A literal string like 'false' is not a Python bool.
+            overrides[name] = ParameterValue(
+                LaunchConfiguration(name), value_type=value_type)
     return [Node(package='robot_control', executable='hw3_slam', output='screen',
                  parameters=[LaunchConfiguration('config'), overrides])]
 
