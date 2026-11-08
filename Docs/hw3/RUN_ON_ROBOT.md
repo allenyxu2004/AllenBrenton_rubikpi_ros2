@@ -194,7 +194,10 @@ At the final corner of every lap, the controller turns back to startup heading
 zero, then stays stopped for `lap_observe_s` (default 1 s) before recording the
 lap as complete. This gives initially visible tags a chance to correct the pose
 and map before the lap snapshot. Reacquisition is not guaranteed, and the pause
-ends even if no tag is detected. Subsequent laps continue from there.
+ends even if no tag is detected. Position and heading are then checked again:
+if SLAM corrections moved either outside tolerance, the controller approaches or
+aligns again before repeating the pause. Subsequent laps continue after both
+checks pass.
 
 If observations are consistently rejected or the pose jumps, inspect
 calibration, extrinsics, timing, and printed tag size before relaxing thresholds.

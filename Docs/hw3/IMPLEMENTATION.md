@@ -137,7 +137,10 @@ reasonable initial drift are necessary for this EKF's local linearization.
 
 Each lap closes by pivoting to startup heading zero, then observing while
 stationary for `lap_observe_s`. The lap's arrival snapshot is recorded after this
-pause so the per-lap error calculation includes those corrections. No tag is
+pause, once corrected position and heading are both within tolerance, so the
+per-lap error calculation includes those corrections. If either is outside
+tolerance, the controller resumes approach/alignment and repeats the pause
+before completing the lap. No tag is
 required to appear during the pause; this restores the estimated viewing
 direction but cannot guarantee the original tag is physically in view.
 
