@@ -69,14 +69,18 @@ def main(args=None):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Ellipse
 
+    # Convert only the display: inputs and quantitative errors remain in metres.
+    feet_per_metre = 1 / 0.3048
     figure, axis = plt.subplots(figsize=(8, 8))
-    trajectory = np.array([e['state'][:2] for e in estimates]) @ rotation.T + translation
+    trajectory = (np.array([e['state'][:2] for e in estimates]) @ rotation.T
+                  + translation) * feet_per_metre
     axis.plot(*trajectory.T, label='Estimated robot trajectory')
     axis.scatter(*trajectory[0], marker='s', label='Start')
     state, covariance = np.array(final['state']), np.array(final['covariance'])
     for tag, index in final['landmarks'].items():
-        position = rotation @ state[index:index + 2] + translation
+        position = (rotation @ state[index:index + 2] + translation) * feet_per_metre
         block = rotation @ covariance[index:index + 2, index:index + 2] @ rotation.T
+        block *= feet_per_metre**2  # Covariance has squared length units.
         values, vectors = np.linalg.eigh(block)
         # 95% joint confidence region for a 2D Gaussian: chi-square(2)=5.991.
         width, height = 2 * np.sqrt(np.maximum(values, 0) * 5.991)
@@ -86,10 +90,11 @@ def main(args=None):
         axis.add_patch(Ellipse(position, width, height, angle=angle,
                                fill=False, edgecolor='tab:orange'))
     if truth:
-        axis.scatter(*np.array(list(truth.values())).T, marker='x', color='black',
+        axis.scatter(*(np.array(list(truth.values())) * feet_per_metre).T,
+                     marker='x', color='black',
                      label='Measured landmark centers')
         for tag, position in truth.items():
-            axis.annotate(f'GT {tag}', position)
+            axis.annotate(f'GT {tag}', position * feet_per_metre)
         rows = landmark_errors(final, truth, start)
         with output.with_suffix('.csv').open('w', newline='') as stream:
             writer = csv.writer(stream)
@@ -110,7 +115,7 @@ def main(args=None):
                     print(f'Lap {event["corner"] // corners}: '
                           f'mean error {np.mean([r[-1] for r in errors]):.4f} m '
                           f'over {len(errors)} landmarks')
-    axis.set(xlabel='x (m)', ylabel='y (m)',
+    axis.set(xlabel='x (ft)', ylabel='y (ft)',
              title=f'{config["shape"]}: landmark estimates and 95% covariance ellipses')
     axis.set_aspect('equal')
     axis.grid(True)

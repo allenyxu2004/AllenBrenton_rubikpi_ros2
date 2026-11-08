@@ -264,7 +264,9 @@ python -m robot_control.slam.evaluate \
 ```
 
 The tool saves the estimated trajectory, final landmarks, and 95% covariance
-ellipses in a PNG. With ground truth it also saves a per-landmark error CSV and
+ellipses in a PNG, displayed in feet. Ground-truth CSV inputs, startup pose
+inputs, and reported errors remain in metres (heading in radians).
+With ground truth it also saves a per-landmark error CSV and
 prints mean Euclidean landmark error at each completed lap and at the end. It
 reports missing IDs so an incomplete map is visible. Compare the same set of
 landmarks across experiments; a mean over fewer visible landmarks is not a fair
