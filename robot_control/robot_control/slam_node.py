@@ -31,7 +31,7 @@ DEFAULTS = dict(
     right_left=0.45, right_right=-0.3, right_rate_rps=1.828518,
     pulse_s=0.15, settle_s=0.35, observe_s=0.25,
     position_tolerance_m=0.08, heading_tolerance_rad=0.10,
-    max_observation_age_s=0.6, max_blind_s=12.0, route_timeout_s=600.0,
+    max_observation_age_s=0.6, route_timeout_s=600.0,
     max_position_std_m=0.6, max_heading_std_rad=0.8,
     max_tag_range_m=4.0, measurement_noise_m=0.04,
     range_noise_fraction=0.02, translation_noise=0.08, rotation_noise=0.20,
@@ -54,7 +54,6 @@ class SlamNode(Node):
         self.corner = 0
         self.finished = False
         self.fault = None
-        self.last_seen = None
         self.stamps = {}
         self.start = self.previous = time.monotonic()
         self.stopped_at = self.start
@@ -144,8 +143,6 @@ class SlamNode(Node):
             result = self.filter.observe(tag, forward, left, noise)
             self.record('observation', tag=tag, forward=forward, left=left,
                         source_stamp_s=stamp, result=result)
-            if result in ('new', 'updated'):
-                self.last_seen = now
 
     def publish_stop(self):
         """Also used during shutdown; serial bridge supplies a second watchdog."""
@@ -164,8 +161,6 @@ class SlamNode(Node):
         if c['drive'] and not self.finished:
             if now - self.start > c['route_timeout_s']:
                 self.fault = 'Route timeout'
-            if self.last_seen is not None and now - self.last_seen > c['max_blind_s']:
-                self.fault = 'No accepted landmark observations within max_blind_s'
             P = self.filter.P
             if (max(P[0, 0], P[1, 1]) > c['max_position_std_m']**2
                     or P[2, 2] > c['max_heading_std_rad']**2):
@@ -176,7 +171,7 @@ class SlamNode(Node):
                 self.record('fault', reason=self.fault)
             self.finished = True
             self.motion, self.wheels = (0.0, 0.0), (0.0, 0.0)
-        elif (c['drive'] and not self.finished and self.last_seen is not None
+        elif (c['drive'] and not self.finished
               and self.commands.get_subscription_count() > 0
               and self.motion == (0.0, 0.0) and now >= self.next_decision):
             self.decide(now)

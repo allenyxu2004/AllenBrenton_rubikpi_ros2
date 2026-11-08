@@ -36,7 +36,6 @@ hw3_slam:
     position_tolerance_m: 0.08  # Distance close enough to reach a corner, m.
     heading_tolerance_rad: 0.10  # Heading error allowed before driving, rad.
     max_observation_age_s: 0.6  # Reject camera frames older than this, s.
-    max_blind_s: 12.0  # Stop after this long without accepted tag observations, s.
     route_timeout_s: 600.0  # Maximum time allowed for the whole run, s.
     max_position_std_m: 0.6  # Stop if x or y uncertainty exceeds this standard deviation, m.
     max_heading_std_rad: 0.8  # Stop if heading uncertainty exceeds this standard deviation, rad.
