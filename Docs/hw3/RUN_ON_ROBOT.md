@@ -79,7 +79,7 @@ Check these values before autonomous driving:
 | Camera intrinsics | Use your measured calibration in `robot_vision/config/camera_parameter.yaml`, at the capture resolution. |
 | `camera_forward_m` | Camera optical center ahead of robot rotation center. Default is 3.5 inches. |
 | `camera_left_m`, `camera_yaw_rad` | Mounting offset/rotation, positive toward robot left. Defaults are zero. |
-| `forward_*`, `left_*`, `right_*` | Firmware commands and physical motion rates. Short-pulse checks give left `2.117690` and right `1.969739` rad/s; recheck on your floor/battery. |
+| `forward_*`, `left_*`, `right_*` | Short-pulse checks give forward `0.219070` m/s, left `2.117690` and right `1.969739` rad/s; recheck on your floor/battery. |
 | Noise parameters | Initial guesses that need fitting from repeated camera measurements and motion trials. |
 
 The camera conversion assumes negligible mounting pitch/roll; substantial tilt

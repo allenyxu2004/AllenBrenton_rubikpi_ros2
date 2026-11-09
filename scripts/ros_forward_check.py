@@ -104,7 +104,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--distance-ft', type=float, default=1.0, help='Nominal increment, feet')
     parser.add_argument('--increments', type=int, default=1, help='Number of manual measurement stops')
-    parser.add_argument('--speed', type=float, default=0.29845, help='Assumed forward speed, m/s')
+    parser.add_argument('--speed', type=float, default=0.219070, help='Assumed forward speed, m/s')
     parser.add_argument('--left-command', type=float, default=0.25)
     parser.add_argument('--right-command', type=float, default=0.20)
     parser.add_argument('--pulse', type=float, default=0.15, help='Maximum movement pulse, seconds')

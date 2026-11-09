@@ -27,7 +27,7 @@ DEFAULTS = dict(
     drive=False, shape='square', side_m=0.9, laps=1,
     camera_frame='camera_frame', camera_forward_m=0.0889,
     camera_left_m=0.0, camera_yaw_rad=0.0,
-    forward_left=0.25, forward_right=0.2, forward_speed_mps=0.29845,
+    forward_left=0.25, forward_right=0.2, forward_speed_mps=0.219070,
     left_left=-0.45, left_right=0.3, left_rate_rps=2.117690,
     right_left=0.45, right_right=-0.3, right_rate_rps=1.969739,
     pulse_s=0.15, settle_s=0.35, observe_s=0.25, lap_observe_s=1.0,
