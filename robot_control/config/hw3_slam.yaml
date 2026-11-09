@@ -6,16 +6,16 @@ hw3_slam:
     side_m: 0.9  # Length of each polygon edge, metres.
     laps: 1  # Number of complete polygon circuits.
 
-    # Defaults reproduce the HW1 calibration; remeasure on your floor/battery.
+    # HW1 baseline with revised turn rates; remeasure on your floor/battery.
     forward_left: 0.25  # Left motor command when driving forward.
     forward_right: 0.2  # Right motor command when driving forward.
     forward_speed_mps: 0.29845  # Measured forward speed, m/s.
     left_left: -0.45  # Left motor command when pivoting left.
     left_right: 0.3  # Right motor command when pivoting left.
-    left_rate_rps: 1.588267  # Measured left pivot rate magnitude, rad/s.
+    left_rate_rps: 2.117690  # Approx. 90 degrees from six 0.123625 s pulses, rad/s.
     right_left: 0.45  # Left motor command when pivoting right.
     right_right: -0.3  # Right motor command when pivoting right.
-    right_rate_rps: 1.828518  # Measured right pivot rate magnitude, rad/s.
+    right_rate_rps: 1.865088  # Provisional +2% rate to reduce slight overshoot, rad/s.
 
     # Level, forward-facing camera. Positive lateral offset/yaw means left.
     camera_frame: camera_frame  # Expected parent frame of tag transforms.
