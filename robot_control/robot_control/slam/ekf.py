@@ -48,6 +48,7 @@ class EkfSlam:
         self.rotation_noise = rotation_noise
         self.measurement_noise = measurement_noise
         self.gate = gate  # chi-square threshold for a 2D innovation (99%).
+        self.last_diagnostics = {}  # Metadata only; never used by filter math.
 
     def predict(self, speed, turn_rate, dt):
         """Propagate commanded unicycle motion and all robot/map correlations.
@@ -115,6 +116,7 @@ class EkfSlam:
         Noise is an isotropic standard deviation in metres, not a variance.
         New landmarks inherit robot uncertainty AND its cross-correlations.
         """
+        self.last_diagnostics = {}
         z = np.array([forward, left], dtype=float)
         sigma = self.measurement_noise if noise is None else noise
         if not np.all(np.isfinite(z)) or not math.isfinite(sigma) or sigma <= 0:
@@ -123,6 +125,7 @@ class EkfSlam:
         #                            [    0     sigma^2 ]
         # R models independent, equally noisy horizontal camera coordinates.
         R = np.eye(2) * sigma**2
+        self.last_diagnostics['measurement_covariance_m2'] = R.tolist()
         c, s = math.cos(self.x[2]), math.sin(self.x[2])
         # C(theta) = [ cos(theta)  -sin(theta) ] maps robot axes into map axes.
         #            [ sin(theta)   cos(theta) ]
@@ -168,6 +171,8 @@ class EkfSlam:
         self.x = np.concatenate([self.x, self.x[:2] + landmark_offset])
         self.P = np.block([[self.P, cross_covariance],
                           [cross_covariance.T, landmark_covariance]])
+        self.last_diagnostics['landmark_position_after_m'] = (
+            self.x[self.indices[tag_id]:self.indices[tag_id] + 2].tolist())
         # Do not correct again using the observation that initialized it.
         return 'new'
 
@@ -202,6 +207,13 @@ class EkfSlam:
         # Reject an implausible observation before it can distort the map.
         # solve(S, nu) computes S^-1 nu without constructing an inverse.
         squared_mahalanobis = innovation @ np.linalg.solve(innovation_covariance, innovation)
+        self.last_diagnostics.update(
+            predicted_measurement_m=predicted_measurement.tolist(),
+            innovation_m=innovation.tolist(),
+            innovation_covariance_m2=innovation_covariance.tolist(),
+            squared_mahalanobis=float(squared_mahalanobis),
+            gate_threshold=float(self.gate),
+            landmark_position_before_m=landmark_position.tolist())
         if squared_mahalanobis > self.gate:
             return 'outlier'
         # Kalman gain K = P^- H^T S^-1                         (N x 2)
@@ -212,6 +224,7 @@ class EkfSlam:
         # Larger uncertainty relative to camera noise generally gives the
         # observation more influence, including on correlated landmarks.
         kalman_gain = np.linalg.solve(innovation_covariance, H @ self.P).T
+        self.last_diagnostics['robot_kalman_gain'] = kalman_gain[:3, :].tolist()
         state_correction = kalman_gain @ innovation
         self.x += state_correction
         self.x[2] = normalize_angle(self.x[2])
@@ -224,4 +237,6 @@ class EkfSlam:
         self.P = (residual_projection @ self.P @ residual_projection.T
                   + kalman_gain @ measurement_covariance @ kalman_gain.T)
         self.P = (self.P + self.P.T) / 2
+        self.last_diagnostics['landmark_position_after_m'] = (
+            self.x[landmark_index:landmark_index + 2].tolist())
         return 'updated'

@@ -118,30 +118,53 @@ class SlamNode(Node):
         integrate at most its 0.15 s timeout and latch a fault during motion.
         """
         dt = max(0.0, now - self.previous)
+        moving = self.motion != (0.0, 0.0)
+        pose_before = self.filter.x[:3].tolist() if moving else None
         if dt > 0.15 and self.motion != (0.0, 0.0):
             self.fault = 'Control timing gap; restart the experiment'
         self.filter.predict(*self.motion, min(dt, 0.15))
+        if moving:
+            self.record('prediction',
+                        interval_start_elapsed_s=self.previous - self.start,
+                        interval_end_elapsed_s=now - self.start,
+                        actual_dt_s=dt, integrated_dt_s=min(dt, 0.15),
+                        speed_mps=self.motion[0], turn_rate_rps=self.motion[1],
+                        wheels=self.wheels, pose_before=pose_before,
+                        pose_after=self.filter.x[:3].tolist(),
+                        robot_covariance=self.filter.P[:3, :3].tolist())
         self.previous = now
 
     def on_tf(self, message):
         now = time.monotonic()
         self.predict_to(now)
         c = self.cfg
-        # Delayed images taken during a pulse must never update a settled pose.
-        if self.motion != (0.0, 0.0) or now - self.stopped_at < c['settle_s']:
-            return
         clock_now = self.get_clock().now().nanoseconds * 1e-9
         for tf in message.transforms:
             tag = tag_id_from_frame(tf.child_frame_id)
-            if tag is None or tf.header.frame_id != c['camera_frame']:
+            if tag is None:
                 continue
             stamp = tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9
             age = clock_now - stamp
-            if not 0 <= age <= c['max_observation_age_s']:
-                continue
-            if now - age < self.stopped_at + c['settle_s']:
-                continue
-            if stamp <= self.stamps.get(tag, -math.inf):
+            timing = dict(source_stamp_s=stamp, source_age_s=age,
+                          receipt_elapsed_s=now - self.start,
+                          time_since_stop_s=now - self.stopped_at,
+                          capture_since_stop_s=now - age - self.stopped_at)
+            # Keep rejection behavior unchanged, but explain discarded frames.
+            reason = None
+            if tf.header.frame_id != c['camera_frame']:
+                reason = 'wrong_camera_frame'
+            elif self.motion != (0.0, 0.0):
+                reason = 'moving'
+            elif now - self.stopped_at < c['settle_s']:
+                reason = 'not_settled'
+            elif not 0 <= age <= c['max_observation_age_s']:
+                reason = 'stale_or_future_frame'
+            elif now - age < self.stopped_at + c['settle_s']:
+                reason = 'captured_before_settling'
+            elif stamp <= self.stamps.get(tag, -math.inf):
+                reason = 'duplicate_or_out_of_order'
+            if reason is not None:
+                self.record('observation_skipped', tag=tag, reason=reason, **timing)
                 continue
             self.stamps[tag] = stamp
             p = tf.transform.translation
@@ -150,14 +173,28 @@ class SlamNode(Node):
                     p.x, p.y, p.z, c['camera_forward_m'],
                     c['camera_left_m'], c['camera_yaw_rad'])
             except ValueError:
+                self.record('observation_skipped', tag=tag,
+                            reason='invalid_translation', **timing)
                 continue
             distance = math.hypot(forward, left)
             if not 0.1 <= distance <= c['max_tag_range_m']:
+                self.record('observation_skipped', tag=tag,
+                            reason='outside_range', distance_m=distance, **timing)
                 continue
             noise = c['measurement_noise_m'] + c['range_noise_fraction'] * distance
+            state_before = self.filter.x.tolist()
+            covariance_before = self.filter.P[:3, :3].tolist()
             result = self.filter.observe(tag, forward, left, noise)
             self.record('observation', tag=tag, forward=forward, left=left,
-                        source_stamp_s=stamp, result=result)
+                        result=result, **timing,
+                        camera_translation_m=[p.x, p.y, p.z],
+                        measurement_std_m=noise,
+                        state_before=state_before, state_after=self.filter.x.tolist(),
+                        landmarks=self.filter.indices,
+                        pose_before=state_before[:3], pose_after=self.filter.x[:3].tolist(),
+                        robot_covariance_before=covariance_before,
+                        robot_covariance_after=self.filter.P[:3, :3].tolist(),
+                        diagnostics=self.filter.last_diagnostics)
 
     def publish_stop(self):
         """Also used during shutdown; serial bridge supplies a second watchdog."""

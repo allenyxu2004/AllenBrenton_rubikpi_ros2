@@ -219,6 +219,23 @@ Each run writes a unique JSONL under `~/.ros/hw3_slam/`; the node prints its pat
 It records parameters, accepted/rejected observations, commands, arrivals, and
 the joint state/covariance every 0.2 s. Each completed lap has an arrival snapshot.
 
+From version 0.1.4, JSONL diagnostics also include:
+
+- `prediction`: actual and integrated elapsed time, commanded speed/turn rate,
+  wheel commands, pose before/after prediction, and robot covariance.
+- `observation`: state/pose before and after processing, landmark indices,
+  camera translation, measurement noise, image age and stop-relative timing.
+  For known tags, `diagnostics` contains the predicted measurement, innovation,
+  innovation covariance, squared Mahalanobis gate score, and accepted robot gain.
+  New tags have initialization metadata instead of a correction innovation.
+- `observation_skipped`: tag ID, timing, and reason a frame was discarded
+  (moving, unsettled, stale, duplicate, invalid position, or outside range).
+
+These details go to the file, not the terminal. Prediction intervals and pose
+corrections can now be distinguished without inferring motion from sparse plot
+samples. More logging adds I/O overhead; timing-gap faults still stop the run.
+The existing plotting and transfer commands remain unchanged.
+
 After stopping the run, open a terminal on your **laptop**, outside SSH. Copy the
 logs from the robot:
 
