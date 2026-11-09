@@ -15,7 +15,7 @@ hw3_slam:
     left_rate_rps: 2.117690  # Approx. 90 degrees from six 0.123625 s pulses, rad/s.
     right_left: 0.45  # Left motor command when pivoting right.
     right_right: -0.3  # Right motor command when pivoting right.
-    right_rate_rps: 1.865088  # Provisional +2% rate to reduce slight overshoot, rad/s.
+    right_rate_rps: 1.969739  # Approx. 90 degrees from eight 0.099683 s pulses, rad/s.
 
     # Level, forward-facing camera. Positive lateral offset/yaw means left.
     camera_frame: camera_frame  # Expected parent frame of tag transforms.
