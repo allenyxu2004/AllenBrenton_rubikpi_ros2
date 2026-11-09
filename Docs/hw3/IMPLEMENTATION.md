@@ -1,5 +1,8 @@
 # How the HW3 implementation fits together
 
+See [SLAM_DIAGRAMS.md](SLAM_DIAGRAMS.md) for Mermaid diagrams of the system,
+filter, and control cycle, with the corresponding equations.
+
 Read the files in this order:
 
 | File under `robot_control/robot_control/` | Responsibility |

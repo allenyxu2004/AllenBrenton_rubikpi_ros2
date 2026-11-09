@@ -47,6 +47,13 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+The SLAM startup box displays the running software version, full log path,
+and actual left/right turn rates. The JSONL config event stores the version
+and all effective parameters. Check these after rebuilding: a newer software
+version alone does not guarantee that an edited YAML contains the latest rates.
+The laptop evaluator also prints the version recorded in the run; older logs
+are labeled unversioned.
+
 The existing board setup must already provide `qtiqmmfsrc`, the AprilTag build
 dependencies, and serial access through the `dialout` group.
 NumPy is needed for the online filter; Matplotlib is only needed on the laptop
@@ -72,7 +79,7 @@ Check these values before autonomous driving:
 | Camera intrinsics | Use your measured calibration in `robot_vision/config/camera_parameter.yaml`, at the capture resolution. |
 | `camera_forward_m` | Camera optical center ahead of robot rotation center. Default is 3.5 inches. |
 | `camera_left_m`, `camera_yaw_rad` | Mounting offset/rotation, positive toward robot left. Defaults are zero. |
-| `forward_*`, `left_*`, `right_*` | Firmware commands and measured physical motion rates. Defaults copy HW1 calibration. |
+| `forward_*`, `left_*`, `right_*` | Firmware commands and physical motion rates. Short-pulse checks give left `2.117690` and right `1.969739` rad/s; recheck on your floor/battery. |
 | Noise parameters | Initial guesses that need fitting from repeated camera measurements and motion trials. |
 
 The camera conversion assumes negligible mounting pitch/roll; substantial tilt
@@ -266,6 +273,10 @@ python -m robot_control.slam.evaluate \
 The tool saves the estimated trajectory, final landmarks, and 95% covariance
 ellipses in a PNG, displayed in feet. Ground-truth CSV inputs, startup pose
 inputs, and reported errors remain in metres (heading in radians).
+Dashed lines automatically label estimated center-to-center distances for tags
+7–5, 4–9, 3–0, and 8–2 when both IDs are present. These are map estimates, not
+ground-truth distances. Edit `DISTANCE_PAIRS` in `slam/evaluate.py` if the layout
+changes.
 With ground truth it also saves a per-landmark error CSV and
 prints mean Euclidean landmark error at each completed lap and at the end. It
 reports missing IDs so an incomplete map is visible. Compare the same set of

@@ -1,10 +1,15 @@
+from pathlib import Path
+from runpy import run_path
+
 from setuptools import find_packages, setup
 
 package_name = 'robot_control'
+package_version = run_path(str(
+    Path(__file__).parent / package_name / 'version.py'))['__version__']
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version=package_version,
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',

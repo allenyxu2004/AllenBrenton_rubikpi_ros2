@@ -136,6 +136,8 @@ The user also needs to be in the `dialout` group to open `/dev/ttyUSB0`.
 
 ## Conventions
 
+- For every future change set (including code, config, scripts, or docs), increment the patch version in `robot_control/robot_control/version.py` and mirror it in `robot_control/package.xml` before committing. Bump once per change set, not for intermediate edits. `setup.py` reads the Python version file; do not add another version literal there. Leave vendored package versions unchanged. The SLAM startup box and JSONL config event must report this version.
+
 - Commits: conventional format (`feat:`, `fix:`, …), subject line only, no AI attribution.
 - Don't hardcode new absolute paths; use `get_package_share_directory` or launch substitutions.
 - New controllers should publish `motor_commands`, not open the serial port.

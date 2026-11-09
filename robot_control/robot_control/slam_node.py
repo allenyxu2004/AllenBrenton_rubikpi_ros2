@@ -20,6 +20,7 @@ from tf2_msgs.msg import TFMessage
 from robot_control.slam.ekf import EkfSlam
 from robot_control.slam.observations import planar_observation, tag_id_from_frame
 from robot_control.slam.trajectory import action_to_goal, action_to_heading, polygon_waypoints
+from robot_control.version import __version__
 
 
 DEFAULTS = dict(
@@ -70,13 +71,24 @@ class SlamNode(Node):
         # Exclusive creation protects earlier experiment results.
         self.log_path = directory / f'{time.time_ns()}_{c["shape"]}.jsonl'
         self.log = self.log_path.open('x', buffering=1)
-        self.record('config', parameters=c)
+        self.record('config', software_version=__version__, parameters=c)
         self.commands = self.create_publisher(Float32MultiArray, 'motor_commands', 1)
         self.poses = self.create_publisher(PoseWithCovarianceStamped, 'slam/pose', 10)
         self.tags = self.create_subscription(TFMessage, '/tf', self.on_tf,
                                              qos_profile_sensor_data)
         self.timer = self.create_timer(0.05, self.tick)
-        self.get_logger().info(f'Log: {self.log_path}; drive={c["drive"]}')
+        log_details = [
+            f'HW3 SLAM v{__version__} - LOG FILE',
+            str(self.log_path),
+            f'drive={c["drive"]} | shape={c["shape"]} | laps={c["laps"]}',
+            f'turn rates: left={c["left_rate_rps"]:.6f}, right={c["right_rate_rps"]:.6f} rad/s',
+        ]
+        box_width = max(len(line) for line in log_details)
+        border = '+' + '-' * (box_width + 2) + '+'
+        box_lines = [border]
+        box_lines.extend(f'| {line:<{box_width}} |' for line in log_details)
+        box_lines.append(border)
+        self.get_logger().info('\n' + '\n'.join(box_lines))
 
     def validate_config(self):
         """Fail before publishing commands if a parameter is unsafe/meaningless."""
