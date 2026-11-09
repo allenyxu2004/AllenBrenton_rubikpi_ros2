@@ -20,6 +20,11 @@ Optional launch arguments override only the values explicitly supplied.
 `launch/hw3_slam.launch.py` starts the complete stack, stationary by default.
 Existing HW1/HW2 controllers are unchanged.
 
+In `ekf.py`, `observe()` validates measurements and dispatches to
+`initialize_landmark()` for new IDs or `update_landmark()` for known IDs.
+Intermediate names such as `innovation_covariance`, `kalman_gain`, and
+`state_correction` match the equation comments beside each calculation.
+
 ## State and measurements
 
 The joint state is `x = [robot_x, robot_y, theta, lm1_x, lm1_y, ...]`.

@@ -129,40 +129,59 @@ class EkfSlam:
         # C^T is its inverse. Use C for rotation, R for measurement covariance.
         rotation = np.array([[c, -s], [s, c]])
         if tag_id not in self.indices:
-            # Inverse measurement model for a NEW landmark:
-            #
-            # d = C z,      m_new = [x_r, y_r]^T + d.
-            #
-            # J_x = partial m_new / partial [x_r, y_r, theta]
-            #     = [ 1  0  -d_y ]     J_z = partial m_new / partial z = C.
-            #       [ 0  1   d_x ]
-            #
-            # Robot heading uncertainty moves the landmark sideways around
-            # the robot, so its position covariance must include that effect.
-            offset = rotation @ z
-            J = np.array([[1, 0, -offset[1]], [0, 1, offset[0]]])
-            # B = Cov(old_state, m_new) = P[:, robot] J_x^T     (N x 2)
-            # D = Cov(m_new, m_new) = J_x P_rr J_x^T + C R C^T (2 x 2)
-            #
-            # x_aug = [ x_old ]       P_aug = [ P_old   B ]
-            #         [ m_new ]               [  B^T    D ]
-            #
-            # B connects the new landmark to the existing robot AND map.
-            # Omitting B would incorrectly treat those estimates as independent.
-            cross = self.P[:, :3] @ J.T
-            covariance = J @ self.P[:3, :3] @ J.T + rotation @ R @ rotation.T
-            self.indices[tag_id] = len(self.x)
-            self.x = np.concatenate([self.x, self.x[:2] + offset])
-            self.P = np.block([[self.P, cross], [cross.T, covariance]])
-            # Do not correct again using the observation that initialized it.
-            return 'new'
+            return self.initialize_landmark(tag_id, z, R, rotation)
+        return self.update_landmark(tag_id, z, R, rotation)
 
-        i = self.indices[tag_id]
+    def initialize_landmark(self, tag_id, measurement, measurement_covariance,
+                            robot_to_map):
+        """Add a new landmark and its covariance links; called by observe()."""
+        # Inverse measurement model for a NEW landmark:
+        #
+        # d = C z,      m_new = [x_r, y_r]^T + d.
+        #
+        # J_x = partial m_new / partial [x_r, y_r, theta]
+        #     = [ 1  0  -d_y ]     J_z = partial m_new / partial z = C.
+        #       [ 0  1   d_x ]
+        #
+        # Robot heading uncertainty moves the landmark sideways around
+        # the robot, so its position covariance must include that effect.
+        landmark_offset = robot_to_map @ measurement
+        initialization_jacobian = np.array([
+            [1, 0, -landmark_offset[1]],
+            [0, 1, landmark_offset[0]],
+        ])
+        # B = Cov(old_state, m_new) = P[:, robot] J_x^T     (N x 2)
+        # D = Cov(m_new, m_new) = J_x P_rr J_x^T + C R C^T (2 x 2)
+        #
+        # x_aug = [ x_old ]       P_aug = [ P_old   B ]
+        #         [ m_new ]               [  B^T    D ]
+        #
+        # B connects the new landmark to the existing robot AND map.
+        # Omitting B would incorrectly treat those estimates as independent.
+        cross_covariance = self.P[:, :3] @ initialization_jacobian.T
+        propagated_robot_covariance = (
+            initialization_jacobian @ self.P[:3, :3] @ initialization_jacobian.T)
+        rotated_measurement_covariance = (
+            robot_to_map @ measurement_covariance @ robot_to_map.T)
+        landmark_covariance = propagated_robot_covariance + rotated_measurement_covariance
+        self.indices[tag_id] = len(self.x)
+        self.x = np.concatenate([self.x, self.x[:2] + landmark_offset])
+        self.P = np.block([[self.P, cross_covariance],
+                          [cross_covariance.T, landmark_covariance]])
+        # Do not correct again using the observation that initialized it.
+        return 'new'
+
+    def update_landmark(self, tag_id, measurement, measurement_covariance,
+                        robot_to_map):
+        """Correct a known landmark and correlated state; called by observe()."""
+        landmark_index = self.indices[tag_id]
         # Forward measurement model for a KNOWN landmark j:
         #
         # h_j(x) = C^T (m_j - p_r) = [ h_f ]   (expected forward/left).
         #                            [ h_l ]
-        expected = rotation.T @ (self.x[i:i + 2] - self.x[:2])
+        landmark_position = self.x[landmark_index:landmark_index + 2]
+        robot_to_landmark = landmark_position - self.x[:2]
+        predicted_measurement = robot_to_map.T @ robot_to_landmark
         # H = partial h_j / partial x. Example when observing landmark 1:
         #
         #       robot x,y,theta     landmark 1      landmark 2
@@ -172,17 +191,18 @@ class EkfSlam:
         # H has 2 rows and N columns. Only this landmark's columns are
         # directly involved, but covariance links let the whole map update.
         H = np.zeros((2, len(self.x)))
-        H[:, :2] = -rotation.T
-        H[:, 2] = [expected[1], -expected[0]]
-        H[:, i:i + 2] = rotation.T
+        H[:, :2] = -robot_to_map.T
+        H[:, 2] = [predicted_measurement[1], -predicted_measurement[0]]
+        H[:, landmark_index:landmark_index + 2] = robot_to_map.T
         # Innovation nu = z - h_j(x_hat^-): measured minus predicted location.
         # S = H P^- H^T + R is the 2x2 covariance of that discrepancy.
-        innovation = z - expected
-        S = H @ self.P @ H.T + R
+        innovation = measurement - predicted_measurement
+        innovation_covariance = H @ self.P @ H.T + measurement_covariance
         # d^2 = nu^T S^-1 nu: discrepancy measured in uncertainty units.
         # Reject an implausible observation before it can distort the map.
         # solve(S, nu) computes S^-1 nu without constructing an inverse.
-        if innovation @ np.linalg.solve(S, innovation) > self.gate:
+        squared_mahalanobis = innovation @ np.linalg.solve(innovation_covariance, innovation)
+        if squared_mahalanobis > self.gate:
             return 'outlier'
         # Kalman gain K = P^- H^T S^-1                         (N x 2)
         # Updated mean x_hat^+ = x_hat^- + K nu                (N x 1)
@@ -191,15 +211,17 @@ class EkfSlam:
         # solve(S, H P)^T = (S^-1 H P)^T = P H^T S^-1.
         # Larger uncertainty relative to camera noise generally gives the
         # observation more influence, including on correlated landmarks.
-        K = np.linalg.solve(S, H @ self.P).T
-        self.x += K @ innovation
+        kalman_gain = np.linalg.solve(innovation_covariance, H @ self.P).T
+        state_correction = kalman_gain @ innovation
+        self.x += state_correction
         self.x[2] = normalize_angle(self.x[2])
         # Joseph form maintains positive semidefiniteness under roundoff.
         # A = I - K H
         # P^+ = A P^- A^T + K R K^T.
         # This is algebraically equivalent to (I-KH)P^- in exact arithmetic,
         # but is numerically safer for covariance matrices.
-        A = np.eye(len(self.x)) - K @ H
-        self.P = A @ self.P @ A.T + K @ R @ K.T
+        residual_projection = np.eye(len(self.x)) - kalman_gain @ H
+        self.P = (residual_projection @ self.P @ residual_projection.T
+                  + kalman_gain @ measurement_covariance @ kalman_gain.T)
         self.P = (self.P + self.P.T) / 2
         return 'updated'
