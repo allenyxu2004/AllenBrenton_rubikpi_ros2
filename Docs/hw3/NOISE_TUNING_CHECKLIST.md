@@ -22,6 +22,17 @@ fix its speed calibration. Noise describes how much results vary between trials.
 
 ## 2. Test the camera while stopped: R
 
+Use the [camera-noise sampler](CAMERA_NOISE_SAMPLER.md) to collect and save
+200 distinct observations automatically. For a tag 6 feet straight ahead:
+
+```bash
+ros2 run robot_control camera_noise --x-ft 0 --y-ft 6
+```
+
+Tag 4 is the default; use `--tag-id ID` to change it. Here x is left and y is forward, measured from
+the robot center. Start the stationary camera/tag pipeline first as described
+in the sampler guide.
+
 - Keep the robot and a tag still.
 - Collect about 200 distinct observations at 0.5, 1, 1.5, and 2 meters.
 - At each distance, calculate the standard deviation of the raw `forward` and
