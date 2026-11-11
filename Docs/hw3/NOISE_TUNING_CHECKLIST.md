@@ -55,6 +55,19 @@ consistent but wrong readings suggest a calibration error.
 
 ## 3. Repeat forward movements: translation Q
 
+Use the [simple translation-noise test](TRANSLATION_NOISE_SAMPLER.md). Start only
+the motor bridge (`ros2 run robot_control motor_control`), then in another
+terminal run the following for ten trials of 3 feet each:
+
+```bash
+ros2 run robot_control translation_noise 3
+```
+
+It uses the current SLAM YAML's calibrated forward commands, speed, pulse length,
+and pauses. After each trial, enter the physical distance in feet, then reset the
+robot before starting the next trial. The log includes the error standard
+deviation and estimated `translation_noise`. At least two trials are necessary.
+
 - Repeat the same forward pulse 10-20 times from the same starting pose.
 - Use the same pulse length and settling time as SLAM.
 - Measure actual travel independently with a ruler or floor markings.
