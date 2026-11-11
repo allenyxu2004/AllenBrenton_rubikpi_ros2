@@ -43,6 +43,7 @@ setup(
             'hw3_slam_plot = robot_control.slam.evaluate:main',
             'camera_noise = robot_control.slam.camera_noise:main',
             'translation_noise = robot_control.slam.translation_noise:main',
+            'rotation_noise = robot_control.slam.rotation_noise:main',
             'motor_control = robot_control.motor_control:main',
             'keyboard_control = robot_control.keyboard_control:main',
             'velocity_control = robot_control.velocity_control:main',
