@@ -23,11 +23,12 @@ hw3_slam:
     camera_left_m: 0.0  # Camera distance left of robot center, m.
     camera_yaw_rad: 0.0  # Camera heading relative to robot; left positive, rad.
 
-    # Standard deviations/noise densities are starting guesses, not fitted data.
-    measurement_noise_m: 0.04  # Base tag position standard deviation, m.
+    # Q from repeated motion trials; R conservatively accounts for camera errors.
+    # See Docs/hw3/EXPERIMENTS.md for measurements and model limitations.
+    measurement_noise_m: 0.01  # Conservative base tag standard deviation, m.
     range_noise_fraction: 0.02  # Additional standard deviation per metre of range.
-    translation_noise: 0.08  # Motion noise amplitude, m/sqrt(s).
-    rotation_noise: 0.20  # Turning noise amplitude, rad/sqrt(s).
+    translation_noise: 0.009  # Measured motion noise amplitude, m/sqrt(s).
+    rotation_noise: 0.14  # Larger measured turn-noise amplitude, rounded, rad/sqrt(s).
     innovation_gate: 9.21  # Reject observations above this squared Mahalanobis distance.
 
     pulse_s: 0.15  # Maximum duration of each movement pulse, s.
