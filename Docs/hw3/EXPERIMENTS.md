@@ -135,6 +135,20 @@ See [NOISE_TUNING_CHECKLIST.md](NOISE_TUNING_CHECKLIST.md) and
 
 ## Route experiments and submission measurements
 
+### Noise-setting trial and rollback
+
+Version 0.1.15 applied translation_noise=0.009, rotation_noise=0.14,
+measurement_noise_m=0.01, and range_noise_fraction=0.02. The user reported worse
+physical return-to-start accuracy than before. No quantitative endpoint error
+or run-log comparison has been analyzed, so the cause is not established.
+
+Version 0.1.16 restores the previous heuristic baseline: translation_noise=0.08,
+rotation_noise=0.20, measurement_noise_m=0.04, range_noise_fraction=0.02.
+This supersedes the selected settings described above; those paragraphs record
+the trial's rationale, not the current configuration. Measured noise estimates
+remain experimental evidence, not validated final operating parameters. Wheel
+commands and turn rates are unchanged by this rollback.
+
 The user reports reasonably accurate basic square and octagon motion. Final
 SLAM map accuracy, ground-truth landmark errors, and repeated-lap improvements
 have not been established in this record. Still collect measured tag positions,
