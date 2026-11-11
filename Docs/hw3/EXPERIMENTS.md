@@ -1,10 +1,11 @@
 # HW3 experiment record
 
-Current configuration (v0.1.17): experimental values restored at the user's
-request for further comparison: translation_noise=0.009, rotation_noise=0.14,
-measurement_noise_m=0.01, range_noise_fraction=0.02. Wheel commands and turn
-rates remain unchanged. These are provisional settings, not established as
-better than the baseline. The rollback described below is historical.
+Current configuration (v0.1.18): old Q with new R for a comparison experiment:
+translation_noise=0.08, rotation_noise=0.20, measurement_noise_m=0.01,
+range_noise_fraction=0.02. Wheel commands and turn rates remain unchanged.
+This combination has not yet been validated. Version 0.1.17 used new Q and
+new R (0.009, 0.14, 0.01, 0.02). Earlier selections and rollbacks below
+record the experiment history rather than the current configuration.
 
 Experiments performed November 11, 2026. This records measurements reported
 from the robot, not planned experiments. Distances are relative to the robot
