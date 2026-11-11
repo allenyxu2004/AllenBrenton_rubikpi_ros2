@@ -304,6 +304,67 @@ guarantee of physical accuracy.
 Repeat for the octagon log. Without `--start`, the plot is in the arbitrary
 startup map frame; ground-truth evaluation requires `--start`.
 
+### Generate both online and smoothed plots
+
+For detailed logs recorded by v0.1.4 or later, the laptop-only batch smoother
+generates both the original online plot and an offline reconstructed map:
+
+```bash
+python -m pip install -r scripts/requirements-smooth.txt
+PYTHONPATH=robot_control python -m robot_control.slam.smooth \
+  ~/hw3_logs/REPLACE_WITH_RUN_square.jsonl
+```
+
+Run this command from the repository root. After installing the ROS package,
+`hw3_slam_smooth` is also available as an executable. SciPy is only needed on
+the computer doing smoothing; it is not required by the online ROS node.
+
+Outputs beside the source log are `<run>_online.png`, `<run>_smoothed.png`, and
+`<run>_smoothed.json`. Use `--output-dir PATH` to choose a different directory.
+The JSONL remains unchanged. The result JSON records fitted poses (metres,
+radians), pose times, landmark positions, optimizer costs, and settings.
+
+The smoother jointly fits stopped poses and landmark centers to integrated
+motion predictions and accepted tag observations. All observations between
+motion pulses share a pose, so stationary EKF corrections do not become
+trajectory segments. The startup pose is fixed at zero. No perfect square,
+return-to-start constraint, known distances, or room alignment is assumed.
+Both smoothed plots draw 95% landmark ellipses using approximate marginal
+covariances from their own batch fits. The result JSON stores each 2×2
+landmark covariance in square metres. The online plot uses EKF covariance.
+
+If independently known, a tag pair parallel to the robot's initial heading can
+be supplied as a physical orientation prior:
+
+```bash
+PYTHONPATH=robot_control python -m robot_control.slam.smooth \
+  ~/hw3_logs/REPLACE_WITH_RUN_square.jsonl --parallel-tags 4 9
+```
+
+This constrains the fit, rather than rotating the image afterwards. Its assumed
+standard deviation is 2 degrees (`--parallel-std-deg`); omit the option for a
+log-only reconstruction. Record this prior when reporting results.
+With `--parallel-tags`, the fitted outputs are named
+`<run>_smoothed_with_parallel.png` and `<run>_smoothed_with_parallel.json`,
+preserving the plain smoothed results. Both commands generate the same
+`<run>_online.png`, so running once without and once with the parallel prior
+leaves three distinct graphs for comparison. Use `--all-plots` to generate all
+three in one invocation with tags 4 and 9 as the default parallel pair.
+`move_log.sh` uses this mode after copying the log. It produces the online
+plot for older logs without detailed motion records and skips the parallel fit
+when the run lacks observations of either required tag.
+
+Motion uses the log's translation/rotation noise plus an explicit small
+translation noise in both planar axes (`--slip-noise`, default 0.01
+m/sqrt(s)). This permits lateral drift and pivot translation instead of forcing
+singular, ideal motion constraints. Accepted measurements are modeled as
+independent Gaussian samples using their logged standard deviations. Repeated
+camera errors may be correlated; smoothing cannot remove systematic camera or
+motion-calibration bias and is not ground truth. Old logs without prediction
+intervals are rejected instead of approximating movement from requested pulse
+durations. Separate stationary intervals connected by motion pulses are
+optimized; a continuous high-rate historical pose is not reconstructed.
+
 ## 7. What belongs in the report
 
 Include the measured map sketch, both trajectories/maps with covariance,
