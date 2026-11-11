@@ -1,11 +1,16 @@
 # HW3 experiment record
 
-Current configuration (v0.1.18): old Q with new R for a comparison experiment:
-translation_noise=0.08, rotation_noise=0.20, measurement_noise_m=0.01,
-range_noise_fraction=0.02. Wheel commands and turn rates remain unchanged.
-This combination has not yet been validated. Version 0.1.17 used new Q and
-new R (0.009, 0.14, 0.01, 0.02). Earlier selections and rollbacks below
-record the experiment history rather than the current configuration.
+Current configuration (v0.1.19): restored settings from the user-identified
+accurate run `1794431885789856164_square.jsonl` (v0.1.12): forward commands
+L=0.25 / R=0.20, translation_noise=0.08, rotation_noise=0.20,
+measurement_noise_m=0.04, range_noise_fraction=0.02. Turn rates remain unchanged.
+The source run used three laps, accepted 1,761 corrections with no rejected
+observations, and estimated online tag 4–9 spacing of 2.22, 2.18, and 2.17 ft
+at successive lap completions. The measured separation is 2 ft. Restoring
+these parameters does not guarantee identical behavior across battery/floor
+conditions. Version 0.1.18 tested old Q/new R; v0.1.17 used new Q/new R.
+Earlier selections and rollbacks below record experiment history rather than
+the current configuration.
 
 Experiments performed November 11, 2026. This records measurements reported
 from the robot, not planned experiments. Distances are relative to the robot

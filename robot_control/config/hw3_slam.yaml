@@ -7,8 +7,8 @@ hw3_slam:
     laps: 1  # Number of complete polygon circuits.
 
     # Revised short-pulse calibration; remeasure on your floor/battery.
-    forward_left: 0.24  # Left motor command when driving forward.
-    forward_right: 0.22  # Right motor command when driving forward.
+    forward_left: 0.25  # Left motor command when driving forward.
+    forward_right: 0.20  # Right motor command when driving forward.
     forward_speed_mps: 0.219070  # ROS pulse check: 27.5 actual vs 37.463 predicted inches, m/s.
     left_left: -0.45  # Left motor command when pivoting left.
     left_right: 0.3  # Right motor command when pivoting left.
@@ -23,9 +23,9 @@ hw3_slam:
     camera_left_m: 0.0  # Camera distance left of robot center, m.
     camera_yaw_rad: 0.0  # Camera heading relative to robot; left positive, rad.
 
-    # Comparison experiment: baseline motion Q with the tighter camera R.
+    # Restore settings from accurate run 1794431885789856164 (v0.1.12).
     # See Docs/hw3/EXPERIMENTS.md for measurements and model limitations.
-    measurement_noise_m: 0.01  # Conservative base tag standard deviation, m.
+    measurement_noise_m: 0.04  # Base tag position standard deviation, m.
     range_noise_fraction: 0.02  # Additional standard deviation per metre of range.
     translation_noise: 0.08  # Baseline motion noise amplitude, m/sqrt(s).
     rotation_noise: 0.20  # Baseline turning noise amplitude, rad/sqrt(s).
