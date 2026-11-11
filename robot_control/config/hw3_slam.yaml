@@ -7,8 +7,8 @@ hw3_slam:
     laps: 1  # Number of complete polygon circuits.
 
     # Revised short-pulse calibration; remeasure on your floor/battery.
-    forward_left: 0.25  # Left motor command when driving forward.
-    forward_right: 0.2  # Right motor command when driving forward.
+    forward_left: 0.24  # Left motor command when driving forward.
+    forward_right: 0.22  # Right motor command when driving forward.
     forward_speed_mps: 0.219070  # ROS pulse check: 27.5 actual vs 37.463 predicted inches, m/s.
     left_left: -0.45  # Left motor command when pivoting left.
     left_right: 0.3  # Right motor command when pivoting left.
