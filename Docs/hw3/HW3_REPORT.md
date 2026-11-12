@@ -2,9 +2,12 @@
 
 **Report draft — complete the marked fields before submission.**
 
-Name(s): **[INSERT]**  
-Course: UCSD CSE 276A, Fall 2026  
-Unlisted demonstration video: **[INSERT YOUTUBE LINK]**  
+Name(s): **[INSERT]**
+
+Course: UCSD CSE 276A, Fall 2026
+
+Unlisted demonstration video: **[INSERT YOUTUBE LINK]**
+
 Code ZIP: **[INSERT SUBMITTED ZIP NAME]**
 
 This report follows the homework's map, Kalman strategy, F/G, Q/R,
