@@ -34,6 +34,19 @@ def annotate_landmark_distances(axis, positions):
         print(f'Estimated tag distance {first}–{second}: {distance:.2f} ft')
 
 
+def plot_landmark(axis, tag, position, covariance):
+    """Draw a landmark and its 95% Gaussian ellipse in plot units."""
+    from matplotlib.patches import Ellipse
+
+    values, vectors = np.linalg.eigh(covariance)
+    width, height = 2 * np.sqrt(np.maximum(values, 0) * 5.991)
+    angle = math.degrees(math.atan2(vectors[1, 0], vectors[0, 0]))
+    axis.scatter(*position, color='tab:orange')
+    axis.annotate(str(tag), position)
+    axis.add_patch(Ellipse(position, width, height, angle=angle,
+                           fill=False, edgecolor='tab:orange'))
+
+
 def world_transform(start):
     """Measured startup robot pose maps the arbitrary SLAM frame to the room."""
     x, y, theta = start
@@ -94,7 +107,6 @@ def main(args=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Ellipse
 
     # Convert only the display: inputs and quantitative errors remain in metres.
     feet_per_metre = 1 / 0.3048
@@ -110,14 +122,7 @@ def main(args=None):
         landmark_positions[int(tag)] = position
         block = rotation @ covariance[index:index + 2, index:index + 2] @ rotation.T
         block *= feet_per_metre**2  # Covariance has squared length units.
-        values, vectors = np.linalg.eigh(block)
-        # 95% joint confidence region for a 2D Gaussian: chi-square(2)=5.991.
-        width, height = 2 * np.sqrt(np.maximum(values, 0) * 5.991)
-        angle = math.degrees(math.atan2(vectors[1, 0], vectors[0, 0]))
-        axis.scatter(*position, color='tab:orange')
-        axis.annotate(str(tag), position)
-        axis.add_patch(Ellipse(position, width, height, angle=angle,
-                               fill=False, edgecolor='tab:orange'))
+        plot_landmark(axis, tag, position, block)
     annotate_landmark_distances(axis, landmark_positions)
     if truth:
         axis.scatter(*(np.array(list(truth.values())) * feet_per_metre).T,

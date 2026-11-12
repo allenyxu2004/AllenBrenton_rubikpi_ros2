@@ -41,6 +41,8 @@ setup(
             'tag_route = robot_control.tag_route:main',
             'hw3_slam = robot_control.slam_node:main',
             'hw3_slam_plot = robot_control.slam.evaluate:main',
+            'hw3_slam_report = robot_control.slam.report:main',
+            'hw3_slam_smooth = robot_control.slam.smooth:main',
             'camera_noise = robot_control.slam.camera_noise:main',
             'translation_noise = robot_control.slam.translation_noise:main',
             'rotation_noise = robot_control.slam.rotation_noise:main',

@@ -19,7 +19,7 @@ fi
 
 # Resolve imports from this script's location, regardless of the current folder.
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-destination='/Users/brenton/Desktop/cse276a/hw3'
+destination="${HW3_LOG_DIR:-$repo_root/../hw3}"
 mkdir -p "$destination"
 
 if ! scp "276a:~/.ros/hw3_slam/$1" "$destination/"; then
@@ -30,8 +30,8 @@ fi
 echo "Saved: $destination/$1"
 
 if ! PYTHONPATH="$repo_root/robot_control${PYTHONPATH:+:$PYTHONPATH}" \
-    uv run --no-project --with numpy --with matplotlib \
-    python -m robot_control.slam.evaluate "$destination/$1"; then
+    uv run --no-project --with-requirements "$repo_root/scripts/requirements-smooth.txt" \
+    python -m robot_control.slam.smooth "$destination/$1" --all-plots; then
     echo "Plotting failed; the copied log is still at $destination/$1" >&2
     exit 1
 fi
