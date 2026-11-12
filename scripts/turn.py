@@ -18,12 +18,18 @@ def main():
     parser.add_argument("--left-speed", type=float, default=0.2)
     parser.add_argument("--right-speed", type=float, default=0.2)
     parser.add_argument("-t", "--times", type=int, default=1)
+    parser.add_argument("--auto", action="store_true",
+                        help="Run all pulses without prompts; measure the total angle afterward")
+    parser.add_argument("--pause", type=float, default=0.6,
+                        help="Stopped time between automatic pulses, seconds (default: 0.6)")
     parser.add_argument("-p", "--port", default="/dev/ttyUSB0")
     args = parser.parse_args()
     if not math.isfinite(args.duration) or args.duration <= 0:
         parser.error("duration must be finite and greater than zero")
     if args.times < 1:
         parser.error("times must be at least 1")
+    if not math.isfinite(args.pause) or args.pause < 0:
+        parser.error("pause must be finite and nonnegative")
     for speed in (args.left_speed, args.right_speed):
         if not math.isfinite(speed) or not 0 < speed <= 0.5:
             parser.error("motor magnitudes must be greater than 0 and at most 0.5")
@@ -36,12 +42,13 @@ def main():
             try:
                 send_command(connection, 0, 0)
                 for trial in range(1, args.times + 1):
-                    input(
-                        f"Trial {trial}/{args.times}: mark the starting heading, "
-                        "then press Enter to turn..."
-                    )
+                    if not args.auto:
+                        input(
+                            f"Trial {trial}/{args.times}: mark the starting heading, "
+                            "then press Enter to turn..."
+                        )
                     print(
-                        f"Turning {args.direction}: L={left}, R={right}, "
+                        f"Pulse {trial}/{args.times}: turning {args.direction}, L={left}, R={right}, "
                         f"duration={args.duration:.2f} s",
                         flush=True,
                     )
@@ -55,6 +62,10 @@ def main():
                     send_command(connection, 0, 0)
                     elapsed = time.monotonic() - start
                     print(f"Stopped. Actual elapsed time: {elapsed:.3f} s")
+                    if args.auto:
+                        if trial < args.times:
+                            time.sleep(args.pause)
+                        continue
                     measured = input(
                         "Enter measured angle magnitude in degrees "
                         "(or Enter to skip): "
@@ -67,6 +78,8 @@ def main():
                             print(f"Average turn rate: {angle / elapsed:.2f} deg/s")
                         except ValueError:
                             print("Invalid angle; measurement skipped.")
+                if args.auto:
+                    print("All pulses complete; measure the total heading change now.", flush=True)
             finally:
                 send_command(connection, 0, 0)
     except (KeyboardInterrupt, EOFError):

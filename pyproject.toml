@@ -1,0 +1,12 @@
+[project]
+name = "allenbrenton-rubikpi-ros2"
+version = "0.1.0"
+description = "Laptop tools for RubikPi ROS 2 log analysis and HW3 SLAM plots"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=1.20",
+    "scipy>=1.8",
+    "pyyaml>=5.3",
+]
