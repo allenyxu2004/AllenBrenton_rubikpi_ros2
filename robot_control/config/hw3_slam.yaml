@@ -25,8 +25,8 @@ hw3_slam:
 
     # Restore settings from accurate run 1794431885789856164 (v0.1.12).
     # See Docs/hw3/EXPERIMENTS.md for measurements and model limitations.
-    measurement_noise_m: 0.04  # Base tag position standard deviation, m.
-    range_noise_fraction: 0.02  # Additional standard deviation per metre of range.
+    measurement_noise_m: 0.08  # Base tag position standard deviation, m.
+    range_noise_fraction: 0.04  # Additional standard deviation per metre of range.
     translation_noise: 0.08  # Baseline motion noise amplitude, m/sqrt(s).
     rotation_noise: 0.10  # Baseline turning noise amplitude, rad/sqrt(s).
     innovation_gate: 9.21  # Reject observations above this squared Mahalanobis distance.
