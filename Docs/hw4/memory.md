@@ -6,6 +6,7 @@ Last reviewed: 2026-11-20. This describes the local working tree, including unco
 
 | Need | Source |
 |---|---|
+| SSH, source sync, build, launch, and log retrieval | [Robot workflow below](#ssh-build-and-run-on-the-robot), [existing HW3 run guide](../hw3/RUN_ON_ROBOT.md) |
 | HW4 requirements and deadline | [Assignment PDF](CSE276A_26_HW4.pdf), [rubric](rubric.txt) |
 | Repository rules and versioning | [AGENTS.md](../../AGENTS.md) |
 | Current HW3 runtime parameters | [hw3_slam.yaml](../../robot_control/config/hw3_slam.yaml) |
@@ -16,6 +17,110 @@ Last reviewed: 2026-11-20. This describes the local working tree, including unco
 | Noise measurements and tuning history | [EXPERIMENTS.md](../hw3/EXPERIMENTS.md) |
 
 Use the assignment/rubric for requirements, current code and launch-selected YAML for runtime behavior, and the final report for reported results. Older implementation plans and experiment notes can describe earlier settings or proposals. Where these disagree, preserve the distinction rather than treating every document as current implementation.
+
+## SSH, build, and run on the robot
+
+### Connect from the laptop
+
+Run in a laptop terminal (PowerShell or another SSH-capable shell):
+
+```powershell
+ssh ubuntu@ubuntu.local
+```
+
+The user supplies the password when prompted. Do not put the password in documentation, commands, or logs. Use this hostname for SSH and SCP; older IP addresses and SSH aliases in historical guides are not the current connection instructions.
+
+### Identify ROS and the existing checkout
+
+After login, run these commands in the **robot's Bash shell**:
+
+```bash
+ls /opt/ros
+echo "$ROS_DISTRO"
+cd ~/ros2_ws
+colcon list
+```
+
+`colcon list` reports package names and their source paths. Locate `robot_control`, `robot_vision_camera`, and `apriltag_ros`; their parent checkout is the repository to update. Existing guides mention both `~/ros2_ws/AllenBrenton_rubikpi_ros2` and `~/ros2_ws/src/AllenBrenton_rubikpi_ros2`. Use the discovered checkout, not an assumed duplicate. Build from `~/ros2_ws`, not from the checkout or a package directory.
+
+The [HW3 run guide](../hw3/RUN_ON_ROBOT.md) and [camera guide](../setup/camera_setup.md) use **Jazzy**, while the starter instructions assume **Humble**. Inspect `/opt/ros` and the robot's existing environment before selecting a distribution. Do not install or switch distributions merely to match an old example. The commands below use Jazzy; replace `jazzy` with `humble` if that is the installed distribution used by this workspace.
+
+### Update source before building
+
+Local Windows edits do not automatically update the robot. Inspect `git status --short` in the discovered robot checkout before transferring files. For committed changes on a clean checkout, update the intended branch with `git pull --ff-only`. For uncommitted laptop changes, copy the specific changed files into the corresponding checkout paths; include new modules and any modified `setup.py`, package manifest, launch, and configuration files. Preserve robot-side changes and do not copy laptop `.venv`, `build`, `install`, or `log` directories.
+
+For example, from laptop PowerShell, **replace `ROBOT_CHECKOUT` with the absolute checkout path discovered above** before using:
+
+```powershell
+scp .\robot_control\config\hw3_slam.yaml ubuntu@ubuntu.local:ROBOT_CHECKOUT/robot_control/config/hw3_slam.yaml
+```
+
+That example transfers only one config; it is not a complete software deployment. Rebuild after transferring the full intended change set.
+
+### Build and source on the robot
+
+These commands follow the existing [HW3 build/run guide](../hw3/RUN_ON_ROBOT.md) and [HW2 package README](../../robot_control/README.md):
+
+```bash
+source /opt/ros/jazzy/setup.bash
+cd ~/ros2_ws
+colcon build --symlink-install --packages-select robot_control robot_vision_camera apriltag_ros
+source install/setup.bash
+ros2 pkg prefix robot_control
+ros2 pkg executables robot_control
+```
+
+Stop if the build fails. `ros2 pkg prefix` should resolve to the intended workspace installation; executable listing should include `hw3_slam`. For subsequent Python/controller/config-only changes, rebuild with `colcon build --symlink-install --packages-select robot_control`, then source `install/setup.bash` again. Rebuild the camera package when changing its C++ source or calibration assets.
+
+In **every new robot terminal**, source the selected ROS distribution and then the workspace overlay:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ros2_ws/install/setup.bash
+```
+
+The existing run guide documents dependency setup. The board also needs `qtiqmmfsrc`, detector dependencies, Foxglove bridge, Python dependencies, and `dialout` serial access. Treat package installation as setup/troubleshooting rather than a step to repeat for each build.
+
+### Run the implemented HW3 stack
+
+Stop other controllers and serial scripts first. The combined launch starts camera, detector, motor bridge, and controller. Begin with a stationary check:
+
+```bash
+ros2 launch robot_control hw3_slam.launch.py drive:=false
+```
+
+Keep the robot still. In a second SSH terminal, source ROS and the workspace as above, then inspect:
+
+```bash
+ros2 topic echo /slam/pose --once
+ros2 topic echo /tf --once
+ros2 topic info /motor_commands --verbose
+ls -lt ~/.ros/hw3_slam
+```
+
+Check the launch console for a successful serial connection, expected software version, effective turn rates, and log path. Confirm camera-to-tag TF and exactly one motor-command publisher. Press Ctrl-C in the launch terminal before starting another run.
+
+After checking calibration and clearing the physical route, these commands **start autonomous motion**. Run one at a time, with the robot reset to its measured start:
+
+```bash
+ros2 launch robot_control hw3_slam.launch.py drive:=true shape:=square side_m:=0.9 laps:=1
+# Separate run, after stopping the square launch and resetting the robot:
+ros2 launch robot_control hw3_slam.launch.py drive:=true shape:=octagon side_m:=0.45 laps:=1
+```
+
+Use `laps:=3` for repeated laps. Completion leaves the node publishing zeros; Ctrl-C closes the run. HW3 has no obstacle avoidance: these polygon commands are for a clear HW3 test area, not the HW4 obstacle layout. See the existing run guide for calibration checks, route geometry, and failure behavior.
+
+### Retrieve logs and distinguish future HW4 commands
+
+After stopping the launch, copy the filename printed by the node. From laptop PowerShell, replace `RUN_FILENAME.jsonl` with that exact filename:
+
+```powershell
+scp ubuntu@ubuntu.local:~/.ros/hw3_slam/RUN_FILENAME.jsonl .
+```
+
+See [REPORT_PLOTS.md](../hw3/REPORT_PLOTS.md) for laptop evaluation. The existing `move_log.sh` helper uses the older `276a` alias, so the explicit SCP command above avoids depending on that alias.
+
+**HW4 is not executable yet.** The planned `hw4_navigation.launch.py`, `hw4_navigation`/`hw4_report` entry points, `hw4/pose`, and `hw4/path` are future additions. See [the implementation runbook requirements](implementation.md#robot-runbook-to-deliver-with-hw4) for the commands the implementation must support. Building the current project does not create those algorithms.
 
 ## Project structure and operating constraints
 

@@ -91,6 +91,33 @@ Provide `hw4_navigation` and `hw4_report` console entry points and `hw4_navigati
 
 Publish `hw4/pose` (`geometry_msgs/PoseWithCovarianceStamped`) and `hw4/path` (`nav_msgs/Path`) in frame `hw4_map`. Add `nav_msgs` to package dependencies and install all new launch/config files through `setup.py`. Keep the offline planning/report API free of ROS dependencies: geometry/config -> plan result; JSONL -> plots and metrics.
 
+### Robot runbook to deliver with HW4
+
+Use the [SSH/build/run workflow in memory.md](memory.md#ssh-build-and-run-on-the-robot) and the existing [HW3 run guide](../hw3/RUN_ON_ROBOT.md) as the operational baseline. SSH is `ssh ubuntu@ubuntu.local`; the user supplies the password interactively. Document the discovered robot checkout, selected installed ROS distribution, source-transfer step, workspace-root build, and overlay sourcing. Do not assume laptop changes are already deployed.
+
+After registering/installing HW4 assets, the existing three-package build command in memory.md must build the new stack. Verify `ros2 pkg executables robot_control` lists `hw4_navigation` and `hw4_report`, and check the launched version/config event against the deployed source.
+
+The following commands are the **future interface contract, unavailable until HW4 is implemented**. Defaults resolve to installed measured configuration; `drive=true` must still reject unverified measurements/calibration:
+
+```bash
+# Stationary startup and plan inspection; no autonomous motion.
+ros2 launch robot_control hw4_navigation.launch.py mode:=safety drive:=false
+# In another sourced SSH terminal:
+ros2 topic echo /hw4/pose --once
+ros2 topic echo /hw4/path --once
+ros2 topic info /motor_commands --verbose
+```
+
+After stopping the stationary launch, verifying the measured configuration, and resetting to the marked start, run each mode separately:
+
+```bash
+# Each command starts autonomous motion. Stop/reset between runs.
+ros2 launch robot_control hw4_navigation.launch.py mode:=safety drive:=true
+ros2 launch robot_control hw4_navigation.launch.py mode:=distance drive:=true
+```
+
+Document Ctrl-C/shutdown, fault restart, the startup log filename, and SCP retrieval from `~/.ros/hw4_navigation` using `ubuntu@ubuntu.local`. Include a verified offline `hw4_report` invocation when its CLI is implemented. Confirm the stationary check produces a path without moving and that both modes work from a fresh SSH shell after the documented source commands. Until then, use the implemented HW3 commands in memory.md only in an obstacle-free test area.
+
 ## 5. Logging, visualization, and validation
 
 Each run writes an exclusive JSONL log under configurable `~/.ros/hw4_navigation`. Record software version, complete resolved parameters and measured map, mode, plan/replan reason, vertices, bottleneck, length, planning time/expansions, prediction intervals, pose/covariance, source timestamps, accepted/rejected observations, motor commands, faults, goal confirmation, and shutdown. Record plan generation IDs so trajectory decisions can be traced to the active route.
