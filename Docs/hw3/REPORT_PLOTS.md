@@ -25,6 +25,31 @@ PYTHONPATH=robot_control python3 -m robot_control.slam.report RUN.jsonl --both
 
 This produces `graph_vN_online.png` and
 `graph_vN_smoothed_with_parallel.png`, with separate metric CSVs for each.
+Plot titles use **Raw EKF** and **Reconstructed**. Raw EKF means the un-smoothed
+filter estimates, not raw sensor readings. The reconstruction's footer retains
+the smoothing scope and any parallel prior used.
+
+For the report, add `--combined` to save one compact image per run:
+
+```bash
+PYTHONPATH=robot_control python3 -m robot_control.slam.report RUN.jsonl --both --combined
+```
+
+This writes `graph_vN_comparison.png` with Raw EKF on the left, Reconstructed
+on the right, shared axes, and one legend. Baseline-specific metric CSVs are
+still saved under the same version. Numeric errors remain in the written report.
+
+Use `--compact` without `--both` for a compact reconstructed-only graph beside
+a written summary. Every invocation also exports `_landmark_covariances.csv`,
+containing world-frame Cxx, Cxy, and Cyy in both m² and cm².
+
+A confirmed collection/alignment correction affecting reconstructed estimates
+alone can be applied with `--reconstruction-offset-m DX DY`. For example,
+`--reconstruction-offset-m 0 0.01` shifts reconstructed poses and estimated tags
+up 1 cm in world coordinates. The measured start marker, ideal route, measured
+tag coordinates, raw JSONL, and saved smoothing fit remain unchanged. All
+errors are recomputed from corrected estimates. A deterministic translation
+does not change covariance. `_report_settings.json` records the applied offset.
 Both use the full recording, including stationary observations after driving.
 Earlier versions are preserved. `--both --baseline smoothed` instead compares
 online EKF with plain smoothing **without** a parallel prior. The default paired
@@ -32,7 +57,8 @@ baseline preserves the selected smoothing-with-parallel workflow. With
 `--laps 1 3`, both baselines use only data through each requested lap; smoothed
 prefixes are independently refitted.
 
-Every graph reports **estimated cross-track RMS**: the distance from the
+Error values are saved in CSVs and reported in the written discussion rather
+than in the graph titles. **Estimated cross-track RMS** measures distance from the
 estimated robot path to the nearest point on a finite segment of the ideal
 commanded polygon. Each baseline also writes `_trajectory_metrics.csv` (mean,
 RMS, sampled maximum, and estimated path length in metres) and

@@ -173,6 +173,14 @@ def transformed_snapshot(events, index, snapshot, start, fitted=None):
     return trajectory, landmarks
 
 
+def translate_reconstruction(panels, offset):
+    """Apply a deterministic world translation to estimates, not references."""
+    offset = np.asarray(offset, dtype=float)
+    return {lap: (trajectory + offset,
+                  {tag: (point + offset, covariance) for tag, (point, covariance) in landmarks.items()})
+            for lap, (trajectory, landmarks) in panels.items()}
+
+
 def fitted_snapshot(result):
     """Adapt fitted landmarks for plotting/errors; only marginal blocks are used."""
     poses = np.asarray(result['poses'], dtype=float)
@@ -295,11 +303,11 @@ def automatic_limits(panels, truth, start, opts):
         extent.extend([np.array([0, 0]), np.array([8, 8]) * METRES_PER_FOOT * scale])
     points = np.asarray(extent)
     low, high = points.min(axis=0), points.max(axis=0)
-    margin = max(float(np.max(high - low)) * .12, .1 * scale)
+    margin = max(float(np.max(high - low)) * (.045 if opts.combined else .12), .1 * scale)
     return (low[0] - margin, high[0] + margin, low[1] - margin, high[1] + margin)
 
 
-def render(events, snapshots, selected, truth, start, shared, shape, opts):
+def render(events, snapshots, selected, truth, start, shared, shape, opts, layout=None):
     """Draw one explicitly labeled baseline; estimates are never mixed."""
     import matplotlib
     matplotlib.use('Agg')
@@ -310,8 +318,11 @@ def render(events, snapshots, selected, truth, start, shared, shape, opts):
     scale = 1 / METRES_PER_FOOT if opts.units == 'ft' else 1.0
     panels = opts.panels
     limits = opts.bounds
-    fig, axes = plt.subplots(1, len(selected), figsize=(6.4 * len(selected), 6.5),
-                             squeeze=False, sharex=True, sharey=True)
+    if layout is None:
+        fig, axes = plt.subplots(1, len(selected), figsize=(6.4 * len(selected), 6.5),
+                                 squeeze=False, sharex=True, sharey=True)
+    else:
+        fig, axes = layout
     for axis, lap in zip(axes[0], selected):
         trajectory, landmarks = panels[lap]
         if not opts.ground_truth and not opts.local:
@@ -335,7 +346,7 @@ def render(events, snapshots, selected, truth, start, shared, shape, opts):
                                    edgecolor='#d98214', linewidth=1.2))
             axis.scatter(*display, color='#d98214', s=27, zorder=4)
             axis.annotate(str(tag), display, xytext=(5, 5), textcoords='offset points',
-                          color='#a45e00', fontsize=9)
+                          color='#a45e00', fontsize=11 if layout else 9)
             if tag in truth:
                 actual = truth[tag] * scale
                 axis.plot([actual[0], display[0]], [actual[1], display[1]],
@@ -348,27 +359,30 @@ def render(events, snapshots, selected, truth, start, shared, shape, opts):
         for tag, point in sorted(truth.items()):
             axis.scatter(*(point * scale), color='black', marker='x', s=40, zorder=5)
             axis.annotate(str(tag), point * scale, xytext=(-8, -13),
-                          textcoords='offset points', fontsize=8, ha='right')
+                          textcoords='offset points', fontsize=10 if layout else 8, ha='right')
         title = f'Lap {lap}' if lap else 'Final recorded state — no completed lap'
         if opts.full_run:
             title = f'Full run ({lap} completed {"lap" if lap == 1 else "laps"})'
-        if truth:
-            rows = landmark_errors(snapshots[lap][1], truth, start)
-            values = [row[-1] for row in rows if row[0] in shared]
-            result = f'{100 * np.mean(values):.2f} cm' if values else 'unavailable'
-            title += f'\nMean landmark error: {result} ({len(shared)}/{len(truth)} IDs)'
-        deviation = route_deviation(trajectory, opts.ideal_path)[0]
-        title += f'\nEstimated cross-track RMS: {100 * deviation["rms_m"]:.2f} cm'
+        if layout is not None:
+            title = 'Raw EKF' if opts.baseline == 'online' else 'Reconstructed'
+            if len(selected) > 1:
+                title += f' · Lap {lap}'
         axis.set(title=title, xlabel=f'{"Local map" if opts.local else "World"} x ({opts.units})',
                  xlim=limits[:2], ylim=limits[2:])
         axis.set_aspect('equal', adjustable='box')
+        if layout is not None:
+            axis.title.set_fontsize(14)
+            axis.xaxis.label.set_fontsize(11)
+            axis.tick_params(labelsize=10)
         axis.grid(alpha=.18)
         for spine in axis.spines.values():
             spine.set_color('.7')
     axes[0, 0].set_ylabel(f'{"Local map" if opts.local else "World"} y ({opts.units})')
+    if layout is not None:
+        return
     smoothed = opts.baseline != 'online'
-    legend = [Line2D([], [], color='#2467a6', label='Smoothed trajectory' if smoothed
-                    else 'Online EKF trajectory'),
+    legend = [Line2D([], [], color='#2467a6', label='Reconstructed trajectory' if smoothed
+                    else 'Raw EKF trajectory'),
               Line2D([], [], color='#8a5ab5', linestyle='--', label='Ideal commanded path'),
               Line2D([], [], color='#d98214', marker='o', label='Estimated tag + 95% ellipse',
                      markerfacecolor='#d98214', linestyle='none'),
@@ -376,8 +390,8 @@ def render(events, snapshots, selected, truth, start, shared, shape, opts):
     if truth:
         legend += [Line2D([], [], color='black', marker='x', linestyle='none', label='Measured tag'),
                    Line2D([], [], color='#b54343', label='Landmark position error')]
-    baseline_label = {'online': 'online EKF-SLAM', 'smoothed': 'offline smoothed (no prior)',
-                      'smoothed-with-parallel': 'offline smoothed + parallel prior'}[opts.baseline]
+    baseline_label = {'online': 'Raw EKF', 'smoothed': 'Reconstructed',
+                      'smoothed-with-parallel': 'Reconstructed'}[opts.baseline]
     fig.suptitle(f'{shape.capitalize()} — {baseline_label}', fontsize=15)
     single = len(selected) == 1
     fig.legend(handles=legend, loc='lower center', bbox_to_anchor=(.5, .11 if single else .06),
@@ -403,6 +417,87 @@ def render(events, snapshots, selected, truth, start, shared, shape, opts):
     plt.close(fig)
 
 
+def render_comparison(events, prepared, truth, start, shared, shape, opts):
+    """Place raw and reconstructed results together with one compact legend."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    count = len(prepared[0][2])
+    fig, axes = plt.subplots(count, 2, figsize=(9.4, 4.8 * count),
+                             squeeze=False, sharex=True, sharey=True)
+    for column, (current, snapshots, selected) in enumerate(prepared):
+        render(events, snapshots, selected, truth, start, shared, shape, current,
+               layout=(fig, axes[:, column][None, :]))
+    for row in range(count):
+        axes[row, 1].set_ylabel('')
+        axes[row, 0].set_ylabel(f'{"Local map" if opts.local else "World"} y ({opts.units})', fontsize=11)
+    laps = max(prepared[0][2])
+    scope = f'{laps} {"lap" if laps == 1 else "laps"}' if prepared[0][0].full_run else 'lap comparison'
+    fig.suptitle(f'{shape.capitalize()} · {scope}', fontsize=15, y=.98)
+    handles = [Line2D([], [], color='#2467a6', label='Estimated trajectory'),
+               Line2D([], [], color='#8a5ab5', linestyle='--', label='Ideal route'),
+               Line2D([], [], color='#d98214', marker='o', linestyle='none', label='Tag + 95% ellipse'),
+               Line2D([], [], color='#228344', marker='s', linestyle='none', label='Start / heading')]
+    if truth:
+        handles += [Line2D([], [], color='black', marker='x', linestyle='none', label='Measured tag'),
+                    Line2D([], [], color='#b54343', label='Landmark error')]
+    fig.legend(handles=handles, loc='lower center', bbox_to_anchor=(.5, .035),
+               ncol=3, frameon=False, fontsize=9.5, columnspacing=1.6)
+    reconstructed = prepared[1][0]
+    pair = reconstructed.fit_settings['parallel_tags']
+    prior = (f'Parallel prior: tags {pair[0]}–{pair[1]}, σ={reconstructed.fit_settings["parallel_std_deg"]:g}°.'
+             if pair else 'No parallel prior.')
+    recording = 'Full recording.' if reconstructed.full_run else 'Each lap fitted independently.'
+    note = f'{recording} {prior} Start: ({start[0] / METRES_PER_FOOT:g}, {start[1] / METRES_PER_FOOT:g}) ft, {math.degrees(start[2]):g}°.'
+    fig.text(.5, .005, note, ha='center', va='bottom', fontsize=8)
+    fig.subplots_adjust(left=.065, right=.99, top=.88, bottom=.26, wspace=.12, hspace=.25)
+    output = opts.output.with_name(opts.output.stem + '_comparison' + opts.output.suffix)
+    fig.savefig(output, dpi=240, bbox_inches='tight', pad_inches=.045)
+    plt.close(fig)
+    print(f'Comparison: {output}')
+
+
+def render_compact(events, snapshots, selected, truth, start, shared, shape, opts):
+    """Compact single-baseline map for placement beside a report summary."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    fig, axes = plt.subplots(1, len(selected), figsize=(4.7 * len(selected), 5.1), squeeze=False)
+    render(events, snapshots, selected, truth, start, shared, shape, opts, layout=(fig, axes))
+    laps = max(selected)
+    fig.suptitle(f'{shape.capitalize()} · {laps} {"lap" if laps == 1 else "laps"}', fontsize=13, y=.985)
+    handles = [Line2D([], [], color='#2467a6', label='Estimated path'),
+               Line2D([], [], color='#8a5ab5', linestyle='--', label='Ideal route'),
+               Line2D([], [], color='#d98214', marker='o', linestyle='none', label='Tag + 95% ellipse'),
+               Line2D([], [], color='#228344', marker='s', linestyle='none', label='Start / heading')]
+    if truth:
+        handles += [Line2D([], [], color='black', marker='x', linestyle='none', label='Measured tag'),
+                    Line2D([], [], color='#b54343', label='Landmark error')]
+    fig.legend(handles=handles, loc='lower center', bbox_to_anchor=(.5, .025),
+               ncol=2, frameon=False, fontsize=8, columnspacing=1.1)
+    fig.subplots_adjust(left=.13, right=.985, top=.88, bottom=.23, wspace=.15)
+    fig.savefig(opts.output, dpi=260, bbox_inches='tight', pad_inches=.04)
+    plt.close(fig)
+
+
+def write_covariances(output, panels, baseline):
+    """Export world-frame marginal covariance, including the xy cross term."""
+    path = output.with_name(output.stem + '_landmark_covariances.csv')
+    with path.open('w', newline='') as stream:
+        writer = csv.writer(stream)
+        writer.writerow(['lap', 'id', 'baseline', 'cxx_m2', 'cxy_m2', 'cyy_m2',
+                         'cxx_cm2', 'cxy_cm2', 'cyy_cm2'])
+        for lap, (_, landmarks) in panels.items():
+            for tag, (_, covariance) in sorted(landmarks.items()):
+                values = [float(covariance[0, 0]), float(covariance[0, 1]), float(covariance[1, 1])]
+                writer.writerow([lap, tag, baseline, *values, *(v * 10000 for v in values)])
+    print(f'World-frame covariance: {path}')
+
+
 def main(args=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('log', type=Path)
@@ -410,6 +505,9 @@ def main(args=None):
                         default='smoothed-with-parallel', help='Default: smoothed-with-parallel')
     parser.add_argument('--both', action='store_true',
                         help='Save matching online and selected smoothing graphs under one version')
+    parser.add_argument('--combined', action='store_true',
+                        help='With --both, save one compact side-by-side comparison image')
+    parser.add_argument('--compact', action='store_true', help='Compact single-baseline graph')
     parser.add_argument('--smoothed-json', type=Path,
                         help='Saved fit; default sibling JSON matching the selected smoothing baseline')
     source = parser.add_mutually_exclusive_group()
@@ -417,6 +515,9 @@ def main(args=None):
     source.add_argument('--local', action='store_true', help='Local-frame estimates only, without errors')
     parser.add_argument('--start', nargs=3, type=float, metavar=('X_FT', 'Y_FT', 'HEADING_DEG'),
                         help='Measured world start; defaults to sketch start for the logged shape')
+    parser.add_argument('--reconstruction-offset-m', nargs=2, type=float, default=(0., 0.),
+                        metavar=('DX', 'DY'),
+                        help='World translation of reconstructed poses/tags only; references stay fixed')
     parser.add_argument('--laps', nargs='+', type=int,
                         help='Laps to compare; smoothing independently refits each lap prefix')
     parser.add_argument('--units', choices=['ft', 'm'], default='ft')
@@ -433,10 +534,18 @@ def main(args=None):
             raise ValueError('--smoothed-json cannot be used with the online baseline')
         if opts.both and opts.baseline == 'online':
             raise ValueError('--both requires a smoothing baseline to compare against online')
+        if opts.combined and not opts.both:
+            raise ValueError('--combined requires --both')
+        if opts.compact and (opts.both or opts.combined):
+            raise ValueError('--compact is for one baseline; omit --both and --combined')
         if opts.ground_truth and opts.start is None:
             raise ValueError('A custom map requires measured --start X_FT Y_FT HEADING_DEG')
         if opts.start and not all(math.isfinite(v) for v in opts.start):
             raise ValueError('--start must contain finite numbers')
+        if not all(math.isfinite(v) for v in opts.reconstruction_offset_m):
+            raise ValueError('--reconstruction-offset-m must contain finite numbers')
+        if opts.baseline == 'online' and any(opts.reconstruction_offset_m):
+            raise ValueError('--reconstruction-offset-m requires a reconstructed baseline')
         if opts.bounds and (not all(math.isfinite(v) for v in opts.bounds)
                             or opts.bounds[0] >= opts.bounds[1] or opts.bounds[2] >= opts.bounds[3]):
             raise ValueError('--bounds requires finite, increasing x and y limits')
@@ -483,6 +592,11 @@ def main(args=None):
                 snapshots = {lap: snapshots[lap] for lap in selected}
             current.panels = {lap: transformed_snapshot(events, *snapshots[lap], start,
                                                         current.fitted.get(lap)) for lap in selected}
+            current.estimate_offset = (opts.reconstruction_offset_m if baseline != 'online'
+                                       else (0., 0.))
+            current.panels = translate_reconstruction(current.panels, current.estimate_offset)
+            current.metric_start = (start[0] + current.estimate_offset[0],
+                                    start[1] + current.estimate_offset[1], start[2])
             all_snapshots.update({(baseline, lap): value for lap, value in snapshots.items()})
             all_panels.update({(baseline, lap): value for lap, value in current.panels.items()})
             if opts.both:
@@ -493,12 +607,27 @@ def main(args=None):
         limits = opts.bounds or automatic_limits(all_panels, truth, start, opts)
         for current, snapshots, selected in prepared:
             current.bounds = limits
-            render(events, snapshots, selected, truth, start, shared, shape, current)
+            if not opts.combined:
+                renderer = render_compact if opts.compact else render
+                renderer(events, snapshots, selected, truth, start, shared, shape, current)
             scope = 'full_run' if current.full_run else 'lap_arrival'
             if truth:
-                write_metrics(current.output, snapshots, truth, start, shared, current.baseline, scope)
+                write_metrics(current.output, snapshots, truth, current.metric_start,
+                              shared, current.baseline, scope)
             write_route_metrics(current.output, current.panels, opts.ideal_path, current.baseline, scope)
-            print(f'Plot: {current.output}')
+            write_covariances(current.output, current.panels, current.baseline)
+            settings_path = current.output.with_name(current.output.stem + '_report_settings.json')
+            settings_path.write_text(json.dumps(dict(
+                source_log=str(opts.log.resolve()), baseline=current.baseline, scope=scope,
+                measured_start_world_m_rad=start,
+                reconstructed_estimate_translation_world_m=list(current.estimate_offset),
+                measured_landmarks_and_ideal_route_translated=False,
+                covariance_translation_effect='none; deterministic offset',
+                fit_settings=current.fit_settings), indent=2) + '\n')
+            if not opts.combined:
+                print(f'Plot: {current.output}')
+        if opts.combined:
+            render_comparison(events, prepared, truth, start, shared, shape, opts)
     except (ValueError, OSError, KeyError, IndexError, ImportError) as error:
         parser.error(str(error))
 
