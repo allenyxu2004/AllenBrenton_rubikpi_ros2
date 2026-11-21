@@ -9,14 +9,14 @@ REPORT_TIMEZONE = ZoneInfo('America/Los_Angeles')
 
 
 class ReportLog:
-    def __init__(self, directory, logger):
+    def __init__(self, directory, logger, prefix='tag_route'):
         self.logger = logger
         self.stream = None
         try:
             directory = Path(directory).expanduser()
             directory.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now(REPORT_TIMEZONE).strftime('%Y%m%dT%H%M%S.%f%z')
-            self.path = directory / f'tag_route_{stamp}.jsonl'
+            self.path = directory / f'{prefix}_{stamp}.jsonl'
             self.stream = self.path.open('x', encoding='utf-8', buffering=1)
             logger.info(f'Automatic report log: {self.path}')
         except OSError as error:

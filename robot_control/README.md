@@ -53,3 +53,66 @@ edges. Recalibrate the camera before trusting poses. Reports contain visual
 estimates, not independently measured physical error. Trajectory samples use
 0.5 s spacing (`--interval` overrides it); tracking gaps remain gaps. Partial
 runs produce only the waypoints actually reached. Old launch logs are not inputs.
+
+## HW4 known-map navigation
+
+Edit [config/hw4_course.yaml](config/hw4_course.yaml) with your measured
+rectangle boundaries, start position and heading, goal, AprilTag IDs and
+centers, tag size, and robot footprint. Coordinates are metres in the frame
+shown in the YAML. Use equally sized 36h11 tags. At the start, face the
+configured heading with at least one mapped tag visible. Check that tags
+remain visible along both paths and at turn locations.
+
+Preview both routes from the repo root. Run `uv sync` to install the
+laptop dependencies (NetworkX, Shapely, NumPy, PyYAML, and Matplotlib).
+
+```sh
+PYTHONPATH=robot_control uv run python -m robot_control.hw4.plot \
+  robot_control/config/hw4_course.yaml --output hw4_paths.png
+```
+
+The dotted lines are the grid search paths. Solid lines show the collision-checked
+shortcuts the robot follows. NetworkX A* minimizes grid distance. The safety
+planner weights edges by clearance and uses a maximum spanning tree to find the
+best minimum clearance along a start-to-goal route. It then runs A* on edges at
+or above that threshold to break ties by distance. Shapely computes the
+distance from each candidate segment to the obstacle geometry. Shortcutting
+preserves the safety route's clearance threshold. Reported clearance is measured
+from the circular robot footprint
+to the nearest obstacle or boundary. The grey grid cells include the configured
+margin and waypoint tolerance. If both routes coincide, check whether the
+endpoint clearance is limiting the safety objective.
+
+On the RubikPi, install the planner libraries, then build and source the
+workspace. The launch defaults to the installed example course and keeps
+the motors off. Pass your measured YAML by absolute path to use edits without
+rebuilding.
+
+```sh
+sudo apt install python3-networkx python3-shapely
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/measured_course.yaml
+ros2 topic echo /hw4/pose
+```
+
+Check the reported pose against the physical start before enabling motion.
+Stop the preview launch and any competing motor or camera launch. Start
+the robot at the same marked pose for each run.
+
+```sh
+ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/measured_course.yaml objective:=distance drive:=true
+ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/measured_course.yaml objective:=safety drive:=true
+```
+
+Run those commands separately. The navigator uses the HW3 motor calibration,
+predicts pose from the commanded pulses, and corrects it with fixed tag centers
+while stopped. It sends zero wheel commands on completion or fault and relies on
+the motor bridge watchdog if commands stop arriving. If a mapped tag cannot be
+seen for several seconds, check tag placement and visibility in the preview.
+
+The node saves a JSONL log for each run in `~/.ros/hw4/`. Add
+`--distance-log <file>` and `--safety-log <file>` to the plot command to overlay
+the estimated trajectories and print the elapsed drive time, estimated distance,
+estimated minimum clearance, and outcome. Measure physical clearance separately
+if you need ground truth for the report.

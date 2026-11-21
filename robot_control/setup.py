@@ -19,8 +19,10 @@ setup(
             'launch/robot_teleop_launch.py',
             'launch/tag_route.launch.py',
             'launch/hw3_slam.launch.py',
+            'launch/hw4_navigation.launch.py',
         ]),
         ('share/' + package_name + '/config', [
+            'config/hw4_course.yaml',
             'config/waypoints.txt', 'config/hw3_slam.yaml', 'config/hw3_tags.yaml',
         ]),
     ],
@@ -30,6 +32,8 @@ setup(
         'pynput>=1.7.0',
         'numpy>=1.20.0',
         'PyYAML>=5.3',
+        'networkx>=2.4',
+        'shapely>=1.7',
     ],
     zip_safe=True,
     maintainer='root',
@@ -39,6 +43,8 @@ setup(
     entry_points={
         'console_scripts': [
             'tag_route = robot_control.tag_route:main',
+            'hw4_navigation = robot_control.hw4.node:main',
+            'hw4_plot = robot_control.hw4.plot:main',
             'hw3_slam = robot_control.slam_node:main',
             'hw3_slam_plot = robot_control.slam.evaluate:main',
             'hw3_slam_report = robot_control.slam.report:main',
