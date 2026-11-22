@@ -54,65 +54,112 @@ estimates, not independently measured physical error. Trajectory samples use
 0.5 s spacing (`--interval` overrides it); tracking gaps remain gaps. Partial
 runs produce only the waypoints actually reached. Old launch logs are not inputs.
 
-## HW4 known-map navigation
+## HW4 known-map obstacle navigation
 
-Edit [config/hw4_course.yaml](config/hw4_course.yaml) with your measured
-rectangle boundaries, start position and heading, goal, AprilTag IDs and
-centers, tag size, and robot footprint. Coordinates are metres in the frame
-shown in the YAML. Use equally sized 36h11 tags. At the start, face the
-configured heading with at least one mapped tag visible. Check that tags
-remain visible along both paths and at turn locations.
+The implemented planners are **Voronoi for safety** and **visibility graph for
+shortest distance**. NetworkX runs A* and the safety bottleneck searches;
+SciPy constructs the sampled-boundary Voronoi diagram. Rectangle intersections,
+exposed union boundaries and exact whole-segment clearance use analytic Python
+calculations. There is no Shapely dependency or geometry operation.
 
-Preview both routes from the repo root. Run `uv sync` to install the
-laptop dependencies (NetworkX, Shapely, NumPy, PyYAML, and Matplotlib).
+[The implementation plan](../Docs/hw4/implementation.md) records the design,
+[layout](../Docs/hw4/layout.png) and remaining physical checks. The installed
+[course YAML](config/hw4_course.yaml) contains the user-provided 10 ft square,
+start `(2,8)` ft facing -y, goal `(8,2)` ft, eight perimeter tags and obstacle
+face tags 24/23/22/21 clockwise from the bottom. The 14-inch obstacle's exact
+center/alignment, physical tag scale, robot radius and motion/error bounds remain
+provisional. Rotated objects require conservative enclosing rectangles.
 
-```sh
+Both planners use the same reserve: footprint radius + engineering margin +
+tracking allowance + uncertainty budget + delayed-stop/drift reserve. Safety
+maximizes bottleneck clearance on the constructed Voronoi roadmap, then breaks
+ties by distance. Endpoint connectors count in its objective. Visibility A*
+minimizes geometric distance in the conservative rectangular planning model.
+It does not minimize elapsed run time. Only collinear points are removed.
+
+Preview on a laptop from the repository root after `uv sync`:
+
+```bash
 PYTHONPATH=robot_control uv run python -m robot_control.hw4.plot \
   robot_control/config/hw4_course.yaml --output hw4_paths.png
 ```
 
-The dotted lines are the grid search paths. Solid lines show the collision-checked
-shortcuts the robot follows. NetworkX A* minimizes grid distance. The safety
-planner weights edges by clearance and uses a maximum spanning tree to find the
-best minimum clearance along a start-to-goal route. It then runs A* on edges at
-or above that threshold to break ties by distance. Shapely computes the
-distance from each candidate segment to the obstacle geometry. Shortcutting
-preserves the safety route's clearance threshold. Reported clearance is measured
-from the circular robot footprint
-to the nearest obstacle or boundary. The grey grid cells include the configured
-margin and waypoint tolerance. If both routes coincide, check whether the
-endpoint clearance is limiting the safety objective.
+PowerShell equivalent with an existing project virtual environment:
 
-On the RubikPi, install the planner libraries, then build and source the
-workspace. The launch defaults to the installed example course and keeps
-the motors off. Pass your measured YAML by absolute path to use edits without
-rebuilding.
+```powershell
+$env:PYTHONPATH = Join-Path (Get-Location) 'robot_control'
+.\.venv\Scripts\python.exe -m robot_control.hw4.plot robot_control/config/hw4_course.yaml --output hw4_paths.png
+.\.venv\Scripts\python.exe -m unittest discover -s robot_control/test -p test_hw4.py -v
+```
 
-```sh
-sudo apt install python3-networkx python3-shapely
-colcon build --symlink-install
+The figure shows both roadmap representations, reserved boundaries, physical
+obstacle and selected paths. Companion JSON and CSV contain plans/metrics.
+Existing outputs are protected; choose another filename or explicitly pass
+`--overwrite`. Add `--safety-log RUN.jsonl` and/or `--distance-log RUN.jsonl`
+to overlay recorded plans and online estimates. Incomplete/faulted logs are
+identified. Estimate-derived distances include EKF correction jumps and are
+separate from independent physical measurements.
+
+Connect/build using the [robot workflow](../Docs/hw4/memory.md#ssh-build-and-run-on-the-robot):
+`ssh ubuntu@ubuntu.local`, discover the existing checkout and installed ROS
+distro, transfer the changed sources while preserving robot-side work, source
+that distro, and build from the colcon workspace root. The new runtime needs
+SciPy, NetworkX, NumPy, PyYAML and ROS `nav_msgs` in addition to the existing stack.
+On Ubuntu these planner libraries are available as `python3-scipy` and
+`python3-networkx`; use the distro's normal dependency setup/rosdep.
+
+```bash
+# Robot shell, after sourcing the installed ROS distro:
+cd ~/ros2_ws
+colcon build --symlink-install --packages-select robot_control robot_vision_camera apriltag_ros
 source install/setup.bash
-ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/measured_course.yaml
-ros2 topic echo /hw4/pose
+ros2 launch robot_control hw4_navigation.launch.py objective:=safety drive:=false
 ```
 
-Check the reported pose against the physical start before enabling motion.
-Stop the preview launch and any competing motor or camera launch. Start
-the robot at the same marked pose for each run.
+In another sourced terminal, inspect `/hw4/pose`, `/hw4/path` and the launch
+console/log. `drive=false` starts the camera, detector and navigator but creates
+no motor-command publisher and launches no motor bridge. Plans are generated
+once by a worker while stationary. Confirm the estimated start, tag scale,
+post-settle observations, path and visibility around both sides of the obstacle.
+Stop the preview before another camera/navigation launch.
 
-```sh
-ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/measured_course.yaml objective:=distance drive:=true
-ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/measured_course.yaml objective:=safety drive:=true
+Before driving, verify the actual course, footprint, extrinsics, pulse delivery,
+coasting/drift/error bounds, serial readiness and stopping. Record those checks
+in `verification_notes` in a surveyed course file and set both
+`measurements_verified` and `calibration_verified` only after completing them.
+The supplied file deliberately keeps both false; `drive=true` is rejected.
+A motor subscriber count does not establish serial health. A bridge-only
+stationary check may use `ros2 run robot_control motor_control`; stop it before
+the combined drive launch so only one process opens serial.
+
+Motion calibration and pulse/settle settings live in
+[hw4_navigation.yaml](config/hw4_navigation.yaml), selected through the `controller`
+launch argument. Re-measure on the actual floor/battery. Bounds in the course
+must cover the controller's predicted uncertainty and stop envelope, including
+0.15 s watchdog expiry, a 0.05 s serial scheduling interval and measured coast.
+Do not reduce margins to make a rejected pulse run.
+
+After verification, these commands start autonomous motion. Run separately,
+with no competing controller and the robot reset to its marked start:
+
+```bash
+ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/verified_course.yaml objective:=safety drive:=true
+# Stop the previous launch and reset before this separate run:
+ros2 launch robot_control hw4_navigation.launch.py course:=/path/to/verified_course.yaml objective:=distance drive:=true
 ```
 
-Run those commands separately. The navigator uses the HW3 motor calibration,
-predicts pose from the commanded pulses, and corrects it with fixed tag centers
-while stopped. It sends zero wheel commands on completion or fault and relies on
-the motor bridge watchdog if commands stop arriving. If a mapped tag cannot be
-seen for several seconds, check tag placement and visibility in the preview.
+The controller predicts calibrated pulses and corrects against fixed mapped tag
+centers while stopped. Each pulse checks a whole swept envelope including
+predicted positional/heading uncertainty and stopping/drift bounds. Tracking
+violations trigger bounded stopped replanning; a blocked minimum pulse latches
+a fault. Tags must supply accepted corrections within 2 s (or a tighter local
+budget). Goal success requires a fresh post-settle correction. Completion/fault
+continues zeros at 20 Hz until shutdown; restart deliberately after a fault.
+Ctrl-C sends a stop. Keep the course static: this system cannot detect new
+obstacles. Audit tag facing/occlusion in the physical course.
 
-The node saves a JSONL log for each run in `~/.ros/hw4/`. Add
-`--distance-log <file>` and `--safety-log <file>` to the plot command to overlay
-the estimated trajectories and print the elapsed drive time, estimated distance,
-estimated minimum clearance, and outcome. Measure physical clearance separately
-if you need ground truth for the report.
+Logs under `~/.ros/hw4` contain version, resolved settings/map, plan generations,
+roadmaps, observations, covariance, commands, envelope decisions and outcome.
+Local offline checks do not validate robot ROS integration, serial delivery or
+physical safety. Finish stationary checks, isolated motion/stop trials and
+staged obstacle trials before recording repeated full runs and report videos.

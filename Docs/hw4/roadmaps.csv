@@ -1,0 +1,3 @@
+objective,planner,planned_distance_m,planned_body_clearance_m,residual_clearance_m,build_s,search_s,status,run_s,estimated_distance_m,estimated_body_clearance_m,final_estimated_residual_m,replans,fault_reason
+safety,voronoi,3.432868277465938,0.4595999999999999,0.03959999999999986,0.0272320999938529,0.00372480001533404,no_run,,,,,0,
+distance,visibility,3.341056359895774,0.4595999999999999,0.03959999999999986,0.0007167999865487218,0.0002203000185545534,no_run,,,,,0,

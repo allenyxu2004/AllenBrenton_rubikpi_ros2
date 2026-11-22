@@ -1,13 +1,13 @@
 # Project memory for HW4
 
-Last reviewed: 2026-11-20. This describes the local working tree, including uncommitted files; it is not a record of what was submitted or deployed. HW4 design choices below are agreed plans, not implemented features. See [implementation.md](implementation.md) for the build sequence.
+Last updated: 2026-11-21. This describes local source, not submission or robot deployment. HW4 Voronoi/visibility navigation is now implemented at version 0.1.39 with offline tests; physical verification and robot trials are pending. See [implementation.md](implementation.md) for the current design, layout, implementation status and validation sequence. HW1?HW3 notes below retain their historical review context.
 
 ## Quick lookup and source precedence
 
 | Need | Source |
 |---|---|
 | SSH, source sync, build, launch, and log retrieval | [Robot workflow below](#ssh-build-and-run-on-the-robot), [existing HW3 run guide](../hw3/RUN_ON_ROBOT.md) |
-| HW4 requirements and deadline | [Assignment PDF](CSE276A_26_HW4.pdf), [rubric](rubric.txt) |
+| HW4 requirements and deadline | [Assignment PDF](CSE276A_26_HW4.pdf) (referenced rubric.txt is absent) |
 | Repository rules and versioning | [AGENTS.md](../../AGENTS.md) |
 | Current HW3 runtime parameters | [hw3_slam.yaml](../../robot_control/config/hw3_slam.yaml) |
 | Online SLAM math | [ekf.py](../../robot_control/robot_control/slam/ekf.py) |
@@ -120,7 +120,7 @@ scp ubuntu@ubuntu.local:~/.ros/hw3_slam/RUN_FILENAME.jsonl .
 
 See [REPORT_PLOTS.md](../hw3/REPORT_PLOTS.md) for laptop evaluation. The existing `move_log.sh` helper uses the older `276a` alias, so the explicit SCP command above avoids depending on that alias.
 
-**HW4 is not executable yet.** The planned `hw4_navigation.launch.py`, `hw4_navigation`/`hw4_report` entry points, `hw4/pose`, and `hw4/path` are future additions. See [the implementation runbook requirements](implementation.md#robot-runbook-to-deliver-with-hw4) for the commands the implementation must support. Building the current project does not create those algorithms.
+**HW4 is implemented locally.** `hw4_navigation.launch.py`, `hw4_navigation`/`hw4_plot`, `hw4/pose`, and `hw4/path` now exist. See the [package runbook](../../robot_control/README.md#hw4-known-map-obstacle-navigation) and [implementation status](implementation.md#2-implemented-migration-from-the-reviewed-baseline). The supplied twelve-tag course uses the user-provided start/goal and provisional central obstacle. Drive verification flags are false; no robot deployment or successful hardware trial is established.
 
 ## Project structure and operating constraints
 
@@ -249,14 +249,14 @@ Noise trials in [EXPERIMENTS.md](../hw3/EXPERIMENTS.md) show distance-dependent,
 
 The [assignment](CSE276A_26_HW4.pdf) is due **November 25, 2026, before midnight**. It specifies a 10 ft x 10 ft workspace (3.048 m per side), perimeter landmarks, diagonal start/goal placement, and a central obstacle approximately 1x1 to 2x2 ft. Landmarks may also be placed around the obstacle. Measured landmark positions may be available to the robot.
 
-For **each** maximum-safety and minimum-time/distance solution, motivate representation and algorithm, visualize the representation and path, and describe implementation/results. The report also describes architecture and links two run videos. Submit complete code in a ZIP. The [rubric](rubric.txt) allocates 10 points per objective: representation 1, algorithm 4, visualization 2, video 1, result 1, code 1.
+For **each** maximum-safety and minimum-time/distance solution, motivate representation and algorithm, visualize the representation and path, and describe implementation/results. The report also describes architecture and links two run videos. Submit complete code in a ZIP. The historical rubric reference is unavailable locally; rely on the assignment PDF for verified requirements.
 
 Confirmed with the user:
 
 - Use a **known-map, pose-only EKF**; measured landmark coordinates stay fixed.
 - Compare **maximum minimum clearance** with **minimum geometric distance**. Time is a measured secondary result, not the second planner's optimization objective.
-- Use a shared grid: widest-path search for safety, A* for distance.
-- Physical measurements are pending. Do not reuse the HW3 8 ft map as the HW4 map or treat illustrative dimensions as measured facts.
+- Use a **Voronoi roadmap for safety** and **visibility graph for distance**, with NetworkX graph search and SciPy Voronoi construction. The user explicitly excludes Shapely geometric operations; HW4 uses analytic rectangle geometry.
+- The user supplied the 10 ft map, start `(2,8)` ft facing -y, goal `(8,2)` ft, eight perimeter tags and obstacle face tags 24/23/22/21 clockwise from bottom. Exact obstacle placement/mounting, footprint, tag scale and motion/error bounds remain unverified. Do not reuse the HW3 8 ft map.
 
 Before robot execution, measure bounds, obstacle footprint/location, start pose, goal, unique tag IDs/positions and black-edge sizes, full robot footprint about its control center, protrusions/cables, and camera extrinsics. Recheck short-pulse translation/turning on the actual floor and battery. Tag placement must support localization around the obstacle; AprilTags localize the robot but do not detect unmodeled obstacles.
 
