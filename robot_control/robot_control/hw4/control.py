@@ -26,7 +26,6 @@ DEFAULTS = dict(
     settle_s=0.35, observe_s=0.25, max_observation_age_s=0.6, max_tag_range_m=4.0,
     translation_noise=0.08, rotation_noise=0.15, innovation_gate=9.21,
     measurement_noise_m=0.08, range_noise_fraction=0.04,
-    initial_position_std_m=0.05, initial_heading_std_rad=0.12,
     max_position_std_m=0.60, max_heading_std_rad=0.80, heading_tolerance_rad=0.10,
     startup_timeout_s=30.0, route_timeout_s=600.0,
     planning_timeout_s=15.0, max_tag_incidence_deg=75.0,
@@ -102,7 +101,6 @@ class NavigationCore:
         validate_settings(self.cfg)
         c = self.cfg
         self.localizer = FixedMapLocalizer(course, c['translation_noise'], c['rotation_noise'],
-                                           c['initial_position_std_m'], c['initial_heading_std_rad'],
                                            c['innovation_gate'])
         self.record = record or (lambda event, **fields: None)
         self.executor = executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix='hw4-plan')
@@ -118,6 +116,9 @@ class NavigationCore:
         self.target = 1
         self.stamps = {}
         self.cancel = Event()
+        self.record('start_anchor', pose=self.localizer.x[:3].tolist(),
+                    covariance=self.localizer.P[:3, :3].tolist(),
+                    release='first translational prediction; alignment pivots retain x/y')
         self.request_plan(now, 'startup')
 
     def stop(self, now):
@@ -232,10 +233,15 @@ class NavigationCore:
             self.fault(now, 'Control timing gap while moving or monotonic clock reversal')
             return STOP
         if self.motion != STOP:
+            was_anchored = self.localizer.position_anchored
             self.localizer.predict(*self.motion, dt)
             if not valid_estimate(self.localizer):
                 self.fault(now, 'Invalid prediction')
                 return STOP
+            if was_anchored and not self.localizer.position_anchored:
+                self.record('start_anchor_released', generation=self.generation,
+                            pose=self.localizer.x[:3].tolist(),
+                            covariance=self.localizer.P[:3, :3].tolist())
             self.record('prediction', dt_s=dt, motion=self.motion, pose=self.localizer.x[:3].tolist())
             # Count delivered command ticks, rather than comparing a deadline
             # with a slightly early timer callback and adding an entire extra tick.

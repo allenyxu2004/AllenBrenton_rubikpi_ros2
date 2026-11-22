@@ -260,6 +260,68 @@ class ControllerTests(unittest.TestCase):
         reasons = {row.get('reason') for row in core.events}
         self.assertTrue({'before_settling', 'duplicate_or_out_of_order', 'stale_or_future'} <= reasons)
 
+    def test_biased_startup_observations_cannot_relocate_known_start(self):
+        core = self.make_core(drive=False)
+        expected = np.array([*core.course.start, core.course.heading])
+        for index in range(20):
+            now = .5+index*.1
+            observation = transform(core, now, tag=7)
+            observation.transform.translation.z += .30
+            core.observe_tf(observation, now, now)
+            np.testing.assert_array_equal(core.localizer.x[:3], expected)
+            np.testing.assert_array_equal(core.localizer.P[:3, :3], np.zeros((3, 3)))
+        self.assertIsNotNone(core.last_tag)
+        self.assertTrue(core.localizer.position_anchored)
+        self.assertFalse(core.finished)
+
+    def test_alignment_pivots_keep_start_position_but_advance_heading(self):
+        core = self.make_core()
+        ekf = core.localizer
+        for _ in range(3):
+            before_heading = ekf.x[2]
+            ekf.predict(0.0, 2.0, .05)
+            self.assertAlmostEqual(ekf.x[2]-before_heading, .10)
+            self.assertGreater(ekf.P[2, 2], 0)
+            # A plausible biased observation can adjust uncertain heading,
+            # while known x/y and their covariance stay exactly anchored.
+            tf = transform(core, .7, tag=7)
+            ekf.observe(7, tf.transform.translation.z+core.cfg['camera_forward_m']+.10,
+                        -tf.transform.translation.x, .18)
+            np.testing.assert_array_equal(ekf.x[:2], core.course.start)
+            np.testing.assert_array_equal(ekf.P[:2, :], np.zeros_like(ekf.P[:2, :]))
+            np.testing.assert_array_equal(ekf.P[:, :2], np.zeros_like(ekf.P[:, :2]))
+            self.assertGreaterEqual(np.linalg.eigvalsh(ekf.P).min(), -1e-12)
+        self.assertTrue(ekf.position_anchored)
+
+    def test_translation_releases_anchor_and_stopped_corrections_resume(self):
+        core = self.make_core()
+        ekf = core.localizer
+        ekf.predict(.20, 0.0, .10)
+        self.assertFalse(ekf.position_anchored)
+        self.assertAlmostEqual(ekf.x[1], core.course.start[1]-.02)
+        self.assertGreater(np.trace(ekf.P[:2, :2]), 0)
+        before = ekf.x[:3].copy()
+        tf = transform(core, .7, tag=7)
+        result = ekf.observe(7, tf.transform.translation.z+core.cfg['camera_forward_m']+.02,
+                             -tf.transform.translation.x, .04)
+        self.assertEqual(result, 'updated')
+        self.assertGreater(np.linalg.norm(ekf.x[:2]-before[:2]), 1e-6)
+        ekf.predict(0.0, 0.0, .5)
+        ekf.predict(0.0, 1.0, .05)
+        self.assertFalse(ekf.position_anchored)  # Never re-anchor at later stops/turns.
+        self.assertGreater(np.linalg.norm(ekf.x[:2]-core.course.start), .01)
+
+    def test_anchor_release_is_logged_once_on_first_translational_prediction(self):
+        core = self.start_core()
+        self.assertTrue(core.localizer.position_anchored)
+        core.step(.80)
+        self.assertFalse(core.localizer.position_anchored)
+        core.step(.85)
+        core.step(.90)
+        core.step(1.6)
+        core.step(1.65)
+        self.assertEqual(sum(r['event']=='start_anchor_released' for r in core.events), 1)
+
     def test_no_tag_startup_and_repeated_stop_after_fault(self):
         core = self.make_core()
         self.assertEqual(core.step(31), STOP)

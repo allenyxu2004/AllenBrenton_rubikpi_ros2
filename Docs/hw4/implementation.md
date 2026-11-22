@@ -1,6 +1,6 @@
 # HW4 obstacle navigation implementation
 
-Current local version: **0.1.40**. The user requested HW2/HW3-style execution after the first robot run: unreliable tag views should be skipped, and ordinary pose corrections should guide the next pulse rather than force a stop. This revision supersedes the earlier tracking, covariance-tube and verification-gate design.
+Current package version: **0.1.42** (exact startup anchor; saved run artifacts remain from **0.1.40**). The user requested HW2/HW3-style execution after the first robot run: unreliable tag views should be skipped, and ordinary pose corrections should guide the next pulse rather than force a stop. This revision supersedes the earlier tracking, covariance-tube and verification-gate design.
 
 The objectives remain **Voronoi for safety** and **visibility graph for minimum geometric distance**, selected with `objective=safety|distance`. NetworkX supplies A* and graph searches; SciPy constructs the sampled-boundary Voronoi diagram. Rectangle/segment geometry is analytic Python, with no Shapely operations.
 
@@ -16,7 +16,7 @@ Data flow: rectified camera/tag TF -> usable stopped tag observations -> fixed-m
 |---|---|
 | [course.py](../../robot_control/robot_control/hw4/course.py) | Surveyed rectangular map, analytic continuous collision/clearance checks, exposed union boundary segments, duplicate-key/config validation. |
 | [planning.py](../../robot_control/robot_control/hw4/planning.py) | Both roadmaps, exact endpoints, NetworkX searches, collinear-only reduction, coded no-route errors and plan metrics. |
-| [localization.py](../../robot_control/robot_control/hw4/localization.py) | HW3 EKF models with surveyed landmarks held fixed through zero landmark covariance. |
+| [localization.py](../../robot_control/robot_control/hw4/localization.py) | HW3 EKF models with an exact configured startup pose and fixed surveyed landmarks. Startup x/y stay anchored through alignment pivots; the first translation releases that anchor. |
 | [control.py](../../robot_control/robot_control/hw4/control.py) | HW2/HW3 pulse/settle/observe cycle, usable-view tag filtering, tick-counted pulses and steering from the corrected pose. Replan only when a connector crosses known geometry. |
 | [node.py](../../robot_control/robot_control/hw4/node.py) | ROS adapter, 20 Hz commands in drive mode, `hw4/pose`, transient-local `hw4/path`, JSONL logs and shutdown stop. |
 | [launch](../../robot_control/launch/hw4_navigation.launch.py) | `course`, `controller`, `objective=safety`, `drive=false`; rectified camera, detector and navigator; bridge only in drive mode. |
@@ -113,6 +113,12 @@ Short distance may require more/sharper turns and more localization stops. Measu
 
 ## 6. HW2/HW3-style execution and tag handling
 
+The configured start `[x,y,heading]` now initializes with **zero covariance**, as an exact starting anchor. Stationary camera observations still produce diagnostics and innovation-gating results, but cannot shift that pose. Startup alignment pivots advance the heading and its uncertainty while keeping x/y fixed and their covariance/cross-covariance zero. This models a pivot about the known starting center.
+
+On the first prediction with nonzero translational speed, release the x/y anchor. Propagate the usual HW3 process noise from the exact start; do not inject the old 5 cm / 0.12 rad initial uncertainty afterward. Stopped camera corrections then update pose normally. Subsequent stops, pivots and replans never re-anchor to the initial location. JSONL events `start_anchor` and `start_anchor_released` identify the transition. The obsolete initial-position/heading-standard-deviation controller parameters are removed.
+
+This prevents stationary startup relocation; it does not remove potential camera bias after the robot has moved. Existing run plots/logs retain their original estimates and version.
+
 The controller retains the established cycle: pivot/drive for 1-3 command ticks, publish zero, settle for 0.35 s, observe for 0.25 s, then steer toward the current waypoint using the corrected estimate. Wheel commands and motion rates match the calibrated HW3 settings. A three-tick pulse sends exactly three nonzero command ticks; a slightly early callback cannot add a fourth tick. Prediction uses actual elapsed commanded time.
 
 Known-tag corrections are accepted only while stopped and from distinct, recent images captured after settling. Unknown IDs, invalid/nonfinite poses, wrong frames, duplicate/stale/future timestamps, unsuitable depth/range and EKF innovation outliers are ignored.
@@ -146,6 +152,25 @@ Run checks from the repo root:
 PYTHONPATH=robot_control python -m unittest discover -s robot_control/test -p test_hw4.py -v
 ```
 
+### Completed safety run: November 21, 2026, 4:36 PM Pacific
+
+Version 0.1.40 completed the safety route according to the online controller: **104.85 s**, **138 motion pulses**, **zero faults/replans**, and **2.36 cm estimated final goal residual**. Nominal planned distance was 3.379 m. The raw estimate-sampled trajectory totals 4.368 m including localization corrections; commanded-motion prediction totals 3.707 m. These are different model-derived quantities, not independent physical distance measurements.
+
+![Recorded motion separated from stationary localization corrections](safetyRunOld/hw4_safety_20261121T163610_motion_segments.png)
+
+The start's apparent backward travel is an EKF update artifact, not a log-order/parsing error: y increased by 10.18 cm before the first forward pulse, while only stopped observations and a pivot occurred. There were no reverse commands. The left pane preserves the raw online trace; the right colors only prediction displacements and shows accepted stopped observation corrections as gray dotted segments. No raw poses were deleted and neither view is ground truth. Tag 7 reported incidence around 5-14 degrees initially, so the incidence-only filter did not identify that measurement bias.
+
+In this recorded 0.1.40 run, landmarks were fixed but the robot start was a prior with 0.05 m position and 0.12 rad heading standard deviation. That let stationary observations relocate its estimate. Version 0.1.42 replaces that prior with the exact startup anchor described above; it has not been deployed/rerun. Expected tag distances follow from a known pose, but camera measurements remain noisy/biased.
+
+Saved artifacts in this folder:
+
+- [Original JSONL](safetyRunOld/hw4_safety_20261121T163610.460657-0800.jsonl) and [launch console log](safety_v0140_20261122T003608.console.log), downloaded byte-for-byte with SHA-256 checks recorded in the summary.
+- [Original online trajectory PNG](safetyRunOld/hw4_safety_20261121T163610_trajectory.png), [SVG](safetyRunOld/hw4_safety_20261121T163610_trajectory.svg) and [sample CSV](safetyRunOld/hw4_safety_20261121T163610_trajectory.csv).
+- [Motion/correction comparison PNG](safetyRunOld/hw4_safety_20261121T163610_motion_segments.png) and [SVG](safetyRunOld/hw4_safety_20261121T163610_motion_segments.svg).
+- [Motion segment CSV](safetyRunOld/hw4_safety_20261121T163610_motion_segments.csv), [localization correction CSV](safetyRunOld/hw4_safety_20261121T163610_localization_corrections.csv) and [summary/metadata JSON](safetyRunOld/hw4_safety_20261121T163610_summary.json).
+
+The launch and independent stop helper were shut down after completion; no controller remains active.
+
 ## 8. Running, logs and report evidence
 
 See the [package runbook](../../robot_control/README.md#hw4-known-map-obstacle-navigation) and [SSH/build workflow](memory.md#ssh-build-and-run-on-the-robot). Discover/use the existing checkout, preserve robot changes, build from the workspace root, and source the installed ROS distribution plus overlay in each terminal.
@@ -168,4 +193,4 @@ hw4_plot COURSE.yaml --output hw4_paths.png --safety-log SAFETY.jsonl --distance
 
 The output also includes JSON plan data and CSV metrics; existing outputs require an explicit `--overwrite`. Planned length/clearance, estimated traveled distance/clearance, elapsed time and physical tape/video measurements must be reported separately. EKF corrections can create apparent trajectory jumps. Do not describe geometric distance optimization as minimum elapsed time. Deliver architecture/algorithm motivation, both representation/path figures, results, two run video links and complete code ZIP.
 
-Version `0.1.40` is mirrored in `version.py` and `package.xml`; startup and JSONL use that shared value. This revision has offline regression coverage; a new physical run is pending. Physical results from a completed route remain pending.
+Version `0.1.42` is mirrored in `version.py` and `package.xml` for the startup-anchor change and associated documentation. The saved robot run used version `0.1.40`. Controller-reported completion is recorded above; independent physical trajectory and endpoint measurements have not been supplied.

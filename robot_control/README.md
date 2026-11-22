@@ -68,6 +68,13 @@ The [course YAML](config/hw4_course.yaml) has the user-confirmed 10 ft square,
 start `(2,8)` ft facing -y, goal `(8,2)` ft, eight perimeter tags and four obstacle
 face tags (24 bottom, 23 left, 22 top, 21 right). Tag 7 stays at `(0,1)` ft.
 
+Version 0.1.42 anchors the configured initial pose with zero covariance. Camera
+observations cannot relocate the stationary robot. Initial pivots change heading
+while x/y remain fixed; the first translational prediction releases the position
+anchor, after which EKF prediction/corrections operate normally. The anchor is
+never reapplied at later stops. Logs record `start_anchor` and
+`start_anchor_released`; the old initial-pose uncertainty parameters are removed.
+
 Execution follows HW2/HW3: 1-3 ticks of calibrated pivot/drive, 0.35 s settling,
 0.25 s observation, then the next correction. Three ticks deliver three command
 intervals even if the third timer callback is slightly early. Correction uses
@@ -129,6 +136,5 @@ limits. Keep only one motor-command publisher and one serial bridge. Ctrl-C
 sends stop; restart after a latched core fault. The map assumes fixed obstacles.
 
 Logs in `~/.ros/hw4` record version/settings, plans, observations/incidence,
-predictions, pulses, commands and outcome. Version 0.1.40's simplification is
-validated offline; the previous 0.1.39 robot attempt stopped after its first
-pulse. A completed physical safety/distance trial has not been established.
+predictions, pulses, commands and outcome. The version 0.1.40 safety run reported completion in 104.85 s with a 2.36 cm
+estimated goal residual. Its [saved logs and trajectory figures](../Docs/hw4/implementation.md#completed-safety-run-november-21-2026-436-pm-pacific) distinguish commanded-motion predictions from stationary localization corrections. These are online estimates, not independent physical tracking measurements. A distance-mode robot trial remains pending.
