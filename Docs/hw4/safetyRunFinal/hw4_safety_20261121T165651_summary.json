@@ -1,0 +1,76 @@
+{
+  "source_jsonl": "hw4_safety_20261121T165651.037668-0800.jsonl",
+  "source_console": "safety_v0142_20261122T005649.console.log",
+  "jsonl_sha256": "75426248f754a9624bd9fd161d07ab9b98f115f9a57e8afcfda156fa17186a17",
+  "console_sha256": "f2a7bf56cbba0b0aabf6940465f02e32c8f3c12851278d5fa703a5df073f7134",
+  "run_software_version": "0.1.42",
+  "objective": "safety",
+  "planner": "voronoi",
+  "status": "complete",
+  "run_s": 103.14986132399963,
+  "nominal_start_m": [
+    0.6096,
+    2.4384
+  ],
+  "goal_m": [
+    2.4384,
+    0.6096
+  ],
+  "final_estimated_pose": [
+    2.4063522994622315,
+    0.6001253960431193,
+    0.13515416521023838
+  ],
+  "final_estimated_goal_error_m": 0.03341890527677761,
+  "planned_distance_m": 3.3785063929757513,
+  "planned_body_clearance_m": 0.4595999999999999,
+  "estimated_trajectory_distance_m": 4.121279027208632,
+  "estimated_trajectory_body_clearance_m": 0.42729220317659233,
+  "trajectory_samples": 453,
+  "motion_pulses": 136,
+  "faults": 0,
+  "replans": 0,
+  "rejected_observations": {
+    "before_settling": 916,
+    "grazing_view": 1
+  },
+  "startup_position_drift_m": 0.0,
+  "first_forward_elapsed_s": 2.5565945309999734,
+  "anchor_release_events": [
+    {
+      "event": "start_anchor_released",
+      "elapsed_s": 2.6074038910001036,
+      "generation": 1,
+      "pose": [
+        0.6096,
+        2.42746697559662,
+        -1.5707963267948966
+      ],
+      "covariance": [
+        [
+          3.3555257120738794e-08,
+          -1.9555666011373574e-20,
+          6.138330233739161e-06
+        ],
+        [
+          -1.9555666011373574e-20,
+          0.0003194018176000099,
+          3.7586432364290437e-22
+        ],
+        [
+          6.138330233739161e-06,
+          3.7586432364290437e-22,
+          0.001122897015000035
+        ]
+      ]
+    }
+  ],
+  "commanded_motion_model_distance_m": 3.668053891282719,
+  "provenance": "Unsmoothed online EKF estimates during run_start through complete; position corrections are separate from commanded-motion prediction. Neither is independent physical ground truth.",
+  "motion_only_view": {
+    "figure": "hw4_safety_20261121T165651_motion_segments.png",
+    "motion_segments": 336,
+    "correction_segments": 445,
+    "method": "Prediction displacements colored, accepted observation corrections dotted; no filtering/smoothing of raw poses."
+  }
+}

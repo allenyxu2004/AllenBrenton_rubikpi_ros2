@@ -1,0 +1,71 @@
+{
+  "source_jsonl": "hw4_distance_20261121T170234.710691-0800.jsonl",
+  "source_console": "distance_v0142_JbR3A9fE.console.log",
+  "jsonl_sha256": "63215a6ab6575372594d9e17c2050f282fca93161b841ce555cbaa37233ea173",
+  "console_sha256": "664a0c0cd792d3dd74e701c801907ae27cd83cdcce5026bb74d52e3cf907c573",
+  "run_software_version": "0.1.42",
+  "objective": "distance",
+  "planner": "visibility",
+  "status": "complete",
+  "fault_reason": null,
+  "run_s": 86.50008222999986,
+  "nominal_start_m": [
+    0.6096,
+    2.4384
+  ],
+  "goal_m": [
+    2.4384,
+    0.6096
+  ],
+  "final_estimated_pose": [
+    2.4170936952562236,
+    0.6350104432288041,
+    -1.0762880356841595
+  ],
+  "final_estimated_goal_error_m": 0.03316095968030698,
+  "planned_distance_m": 2.8923460373890255,
+  "planned_body_clearance_m": 0.20408211422880065,
+  "estimated_trajectory_distance_m": 3.3328725741938534,
+  "estimated_trajectory_body_clearance_m": 0.1535670507481596,
+  "startup_position_drift_m": 0.0,
+  "first_forward_elapsed_s": 3.7183625279999433,
+  "anchor_release_events": [
+    {
+      "event": "start_anchor_released",
+      "elapsed_s": 3.7688401919999706,
+      "generation": 1,
+      "pose": [
+        0.6200373679126386,
+        2.4350630933659154,
+        -0.3094377510896664
+      ],
+      "covariance": [
+        [
+          0.00029045380395358505,
+          -9.281010597910539e-05,
+          5.302891120490354e-06
+        ],
+        [
+          -9.281010597910539e-05,
+          2.982913586945995e-05,
+          1.6586686921315467e-05
+        ],
+        [
+          5.302891120490354e-06,
+          1.6586686921315467e-05,
+          0.002151885089375718
+        ]
+      ]
+    }
+  ],
+  "trajectory_samples": 379,
+  "motion_pulses": 113,
+  "faults": 0,
+  "replans": 0,
+  "commanded_motion_model_distance_m": 3.112418821816424,
+  "rejected_observations": {
+    "before_settling": 1023,
+    "grazing_view": 6
+  },
+  "provenance": "Online EKF estimates and commanded-motion predictions. No independent physical trajectory measurement."
+}
