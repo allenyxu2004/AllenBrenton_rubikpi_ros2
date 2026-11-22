@@ -35,16 +35,6 @@ class Plan:
     site_spacing: float
 
 
-    @property
-    def grid_points(self):
-        """Legacy plot API until the roadmap reporting migration."""
-        return self.raw_points
-
-    @property
-    def grid_distance(self):
-        return sum(math.dist(a, b) for a, b in pairwise(self.raw_points))
-
-
 def collinear_only(points):
     result = []
     for p in points:
@@ -224,21 +214,3 @@ def plan_course(course, objective, timeout_s=15.0, cancel=None):
 
     roadmap = build_roadmap(course, objective, check)
     return roadmap.solve(objective)
-
-
-class CourseGrid:
-    """Compatibility adapter for legacy HW4 callers during roadmap migration."""
-
-    def __init__(self, course):
-        self.course = course
-        self.points = {}
-        x0, y0, x1, y1 = course.bounds
-        step = course.resolution
-        for i in range(math.ceil((x1-x0)/step)):
-            for j in range(math.ceil((y1-y0)/step)):
-                point = (x0+(i+.5)*step, y0+(j+.5)*step)
-                if course.feasible(point, point):
-                    self.points[i, j] = point
-
-    def plan(self, objective):
-        return plan_course(self.course, objective)

@@ -1,44 +1,33 @@
 """Offline HW4 geometry, roadmap and controller fault/arrival tests (no ROS)."""
 
 from concurrent.futures import Future
-
 from copy import deepcopy
-
 from dataclasses import asdict, replace
-
 import json
-
 import math
-
 from pathlib import Path
-
 import tempfile
-
 from threading import Event
-
 from types import SimpleNamespace
-
 import unittest
 
 import networkx as nx
-
 import numpy as np
 
 from robot_control.hw4.control import (
     DEFAULTS, NavigationCore, PERIOD, STOP, pulse_envelope, validate_settings,
 )
-
 from robot_control.hw4.course import (
     Course, point_segment_distance, read_course, segment_box_distance, segment_box_interval,
 )
-
 from robot_control.hw4.localization import FixedMapLocalizer
-
 from robot_control.hw4.planning import (
     PlanningError, Roadmap, VisibilityRoadmap, build_roadmap, plan_course,
 )
+from robot_control.hw4.plot import read_run
 
 COURSE_PATH = Path(__file__).resolve().parents[1] / 'config' / 'hw4_course.yaml'
+
 
 class InlineExecutor:
     def submit(self, function, *args):
@@ -52,6 +41,7 @@ class InlineExecutor:
     def shutdown(self, **kwargs):
         pass
 
+
 class HeldExecutor(InlineExecutor):
     def submit(self, function, *args):
         self.future = Future()
@@ -61,6 +51,7 @@ class HeldExecutor(InlineExecutor):
     def finish(self):
         function, args = self.job
         self.future.set_result(function(*args))
+
 
 def transform(core, now, tag=6, stamp=None):
     stamp = now if stamp is None else stamp
@@ -73,6 +64,7 @@ def transform(core, now, tag=6, stamp=None):
                            header=SimpleNamespace(frame_id='camera_frame', stamp=SimpleNamespace(
                                sec=math.floor(stamp), nanosec=round((stamp - math.floor(stamp)) * 1e9))),
                            transform=SimpleNamespace(translation=SimpleNamespace(x=-left, y=0.0, z=optical_z)))
+
 
 class GeometryTests(unittest.TestCase):
     def test_exact_swept_distances(self):
@@ -136,6 +128,7 @@ class GeometryTests(unittest.TestCase):
         pieces = course.clip_free_segments((0, 4), (10, 4))
         self.assertEqual(len(pieces), 2)
         self.assertTrue(all(course.feasible(a, b) for a, b in pieces))
+
 
 class PlannerTests(unittest.TestCase):
     def setUp(self):
@@ -217,6 +210,7 @@ class PlannerTests(unittest.TestCase):
         for objective in ('distance', 'safety'):
             plan = plan_course(course, objective)
             self.assertTrue(all(course.feasible(a, b) for a, b in zip(plan.points, plan.points[1:])))
+
 
 class ControllerTests(unittest.TestCase):
     def make_core(self, drive=True, executor=None, **settings):
@@ -407,6 +401,24 @@ class ControllerTests(unittest.TestCase):
                     break
             self.assertEqual(core.outcome, 'complete', (objective, core.events[-3:]))
             self.assertLessEqual(math.dist(core.localizer.x[:2], core.course.goal), core.course.waypoint_tolerance)
+
+
+class ReportTests(unittest.TestCase):
+    def test_incomplete_and_fault_logs_never_report_success(self):
+        course = read_course(COURSE_PATH)
+        config = dict(event='config', course=asdict(course), objective='safety')
+        rows = [config, dict(event='run_start', elapsed_s=1),
+                dict(event='estimate', elapsed_s=2, pose=[*course.start, course.heading])]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'run.jsonl'
+            path.write_text('\n'.join(json.dumps(r) for r in rows) + '\n{"event":', encoding='utf-8')
+            self.assertEqual(read_run(path, course, 'safety')['metrics']['status'], 'incomplete')
+            rows.append(dict(event='fault', elapsed_s=3, reason='test', pose=[*course.start, 0]))
+            path.write_text('\n'.join(json.dumps(r) for r in rows), encoding='utf-8')
+            self.assertEqual(read_run(path, course, 'safety')['metrics']['status'], 'fault')
+            with self.assertRaises(ValueError):
+                read_run(path, course, 'distance')
+
 
 if __name__ == '__main__':
     unittest.main()
