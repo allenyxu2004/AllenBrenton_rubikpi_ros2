@@ -33,7 +33,7 @@ setup(
         'numpy>=1.20.0',
         'PyYAML>=5.3',
         'networkx>=2.4',
-        'shapely>=1.7',
+        'scipy>=1.8',
     ],
     zip_safe=True,
     maintainer='root',
