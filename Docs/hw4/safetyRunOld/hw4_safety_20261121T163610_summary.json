@@ -1,0 +1,50 @@
+{
+  "source_jsonl": "hw4_safety_20261121T163610.460657-0800.jsonl",
+  "source_console": "safety_v0140_20261122T003608.console.log",
+  "jsonl_sha256": "96b454b99392ae8181931cdeadd31b3d0f5225a963c4d8df5054d97979a3ed6f",
+  "console_sha256": "ee550ca413137c4415d95db206e4a4b77ac79f50908ca02ff97880d3bc4d1c0b",
+  "run_software_version": "0.1.40",
+  "objective": "safety",
+  "planner": "voronoi",
+  "status": "complete",
+  "run_s": 104.84501903699993,
+  "nominal_start_m": [
+    0.6096,
+    2.4384
+  ],
+  "goal_m": [
+    2.4384,
+    0.6096
+  ],
+  "final_estimated_pose": [
+    2.41659854544804,
+    0.6006531064426532,
+    0.18722283600244172
+  ],
+  "final_estimated_goal_error_m": 0.023565872037921116,
+  "planned_distance_m": 3.3785063929757513,
+  "planned_body_clearance_m": 0.4595999999999999,
+  "estimated_trajectory_distance_m": 4.368378055293262,
+  "estimated_trajectory_body_clearance_m": 0.3578188905644416,
+  "trajectory_samples": 459,
+  "motion_pulses": 138,
+  "faults": 0,
+  "replans": 0,
+  "rejected_observations": {
+    "before_settling": 945
+  },
+  "provenance": "Unsmoothed online EKF estimates during run_start through complete; include localization correction jumps. Not ground-truth physical travel or clearance.",
+  "initial_localization_shift_before_first_forward_m": [
+    0.02989766895810253,
+    0.10178110943555829
+  ],
+  "motion_only_view": {
+    "figure": "hw4_safety_20261121T163610_motion_segments.png",
+    "method": "Separate logged prediction displacements from accepted observation correction displacements; do not connect a stopped correction as robot travel. No raw poses or observations deleted; no smoothing.",
+    "motion_segments": 339,
+    "correction_segments": 456,
+    "commanded_motion_model_distance_m": 3.707001070062016,
+    "reverse_command_count": 0,
+    "physical_accuracy": "Motion segments use commanded-speed prediction and online heading, not independent ground truth."
+  }
+}

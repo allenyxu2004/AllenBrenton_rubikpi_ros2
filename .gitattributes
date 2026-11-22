@@ -1,0 +1,3 @@
+# Preserve downloaded robot logs byte-for-byte across Windows/Linux checkouts.
+Docs/hw4/**/*.jsonl -text
+Docs/hw4/**/*.console.log -text
