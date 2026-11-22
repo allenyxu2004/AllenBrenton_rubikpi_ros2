@@ -1,3 +1,5 @@
+"""Offline HW4 geometry, roadmap and controller fault/arrival tests (no ROS)."""
+
 from concurrent.futures import Future
 
 from copy import deepcopy
@@ -22,6 +24,10 @@ import networkx as nx
 
 import numpy as np
 
+from robot_control.hw4.control import (
+    DEFAULTS, NavigationCore, PERIOD, STOP, pulse_envelope, validate_settings,
+)
+
 from robot_control.hw4.course import (
     Course, point_segment_distance, read_course, segment_box_distance, segment_box_interval,
 )
@@ -33,6 +39,40 @@ from robot_control.hw4.planning import (
 )
 
 COURSE_PATH = Path(__file__).resolve().parents[1] / 'config' / 'hw4_course.yaml'
+
+class InlineExecutor:
+    def submit(self, function, *args):
+        future = Future()
+        try:
+            future.set_result(function(*args))
+        except Exception as error:
+            future.set_exception(error)
+        return future
+
+    def shutdown(self, **kwargs):
+        pass
+
+class HeldExecutor(InlineExecutor):
+    def submit(self, function, *args):
+        self.future = Future()
+        self.job = (function, args)
+        return self.future
+
+    def finish(self):
+        function, args = self.job
+        self.future.set_result(function(*args))
+
+def transform(core, now, tag=6, stamp=None):
+    stamp = now if stamp is None else stamp
+    x, y, heading = core.localizer.x[:3]
+    tx, ty = core.course.landmarks[tag]
+    forward = math.cos(heading) * (tx - x) + math.sin(heading) * (ty - y)
+    left = -math.sin(heading) * (tx - x) + math.cos(heading) * (ty - y)
+    optical_z = forward - core.cfg['camera_forward_m']
+    return SimpleNamespace(child_frame_id=f'tag_{tag}',
+                           header=SimpleNamespace(frame_id='camera_frame', stamp=SimpleNamespace(
+                               sec=math.floor(stamp), nanosec=round((stamp - math.floor(stamp)) * 1e9))),
+                           transform=SimpleNamespace(translation=SimpleNamespace(x=-left, y=0.0, z=optical_z)))
 
 class GeometryTests(unittest.TestCase):
     def test_exact_swept_distances(self):
@@ -177,6 +217,196 @@ class PlannerTests(unittest.TestCase):
         for objective in ('distance', 'safety'):
             plan = plan_course(course, objective)
             self.assertTrue(all(course.feasible(a, b) for a, b in zip(plan.points, plan.points[1:])))
+
+class ControllerTests(unittest.TestCase):
+    def make_core(self, drive=True, executor=None, **settings):
+        course = replace(read_course(COURSE_PATH), measurements_verified=True,
+                         calibration_verified=True, verification_notes='synthetic test only')
+        events = []
+        core = NavigationCore(course, drive=drive, settings=settings, now=0,
+                              record=lambda event, **fields: events.append(dict(event=event, **fields)),
+                              executor=executor or InlineExecutor())
+        self.addCleanup(core.close)
+        core.events = events
+        return core
+
+    def start_core(self, **settings):
+        core = self.make_core(**settings)
+        core.step(.05)
+        core.observe_tf(transform(core, .7), .7, .7)
+        core.step(.7)
+        core.step(.75)
+        return core
+
+    def test_default_dry_run_and_verification_gate(self):
+        core = self.make_core(drive=False)
+        for now in (.05, .5, 1, 10):
+            self.assertEqual(core.step(now), STOP)
+        self.assertIsNotNone(core.plan)
+        with self.assertRaises(ValueError):
+            NavigationCore(read_course(COURSE_PATH), drive=True)
+        for changes in [dict(min_pulse_s=.01), dict(max_pulse_s=.2), dict(forward_left=.6),
+                        dict(max_tag_gap_s=.1), dict(max_replans=1.2), dict(pivot_drift_m=math.nan)]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_settings(dict(DEFAULTS, **changes))
+
+    def test_fresh_distinct_post_settle_observations(self):
+        core = self.make_core()
+        core.observe_tf(transform(core, .1), .1, .1)
+        self.assertIsNone(core.last_tag)
+        core.observe_tf(transform(core, .5), .5, .5)
+        self.assertAlmostEqual(core.last_tag, .5)
+        for now, stamp in [(.6, .5), (.7, 1.0), (1.3, .6)]:
+            core.observe_tf(transform(core, now, stamp=stamp), now, now)
+        self.assertAlmostEqual(core.last_tag, .5)
+        core.motion = (.2, 0)
+        core.observe_tf(transform(core, 1.4), 1.4, 1.4)
+        self.assertAlmostEqual(core.last_tag, .5)
+        reasons = {row.get('reason') for row in core.events}
+        self.assertTrue({'before_settling', 'duplicate_or_out_of_order', 'stale_or_future'} <= reasons)
+
+    def test_no_tag_startup_and_repeated_stop_after_fault(self):
+        core = self.make_core()
+        self.assertEqual(core.step(31), STOP)
+        self.assertEqual(core.outcome, 'fault')
+        self.assertEqual(core.step(32), STOP)
+        self.assertEqual(sum(r['event'] == 'fault' for r in core.events), 1)
+
+    def test_competing_publisher_and_bridge_loss(self):
+        for fault in ('publisher', 'bridge'):
+            core = self.start_core()
+            core.step(.8, publishers=2 if fault == 'publisher' else 1,
+                      bridge_ready=fault != 'bridge')
+            self.assertTrue(core.finished)
+            self.assertEqual(core.wheels, STOP)
+
+    def test_tag_loss_timing_gap_and_bad_covariance(self):
+        core = self.start_core()
+        core.stop(.8)
+        core.step(3)
+        self.assertIn('stale', core.events[-1]['reason'])
+        core = self.start_core()
+        self.assertNotEqual(core.motion, STOP)
+        self.assertEqual(core.step(1.0), STOP)
+        self.assertIn('timing', core.events[-1]['reason'])
+        core = self.start_core()
+        core.localizer.P[0, 0] = math.nan
+        self.assertEqual(core.step(.8), STOP)
+        self.assertIn('Invalid', core.events[-1]['reason'])
+
+    def test_worker_failure_timeout_and_stale_result(self):
+        executor = HeldExecutor()
+        core = self.make_core(executor=executor)
+        self.assertEqual(core.step(.1), STOP)
+        self.assertIsNone(core.plan)
+        core.step(16)
+        self.assertEqual(core.outcome, 'fault')
+        executor = HeldExecutor()
+        core = self.make_core(executor=executor)
+        core.localizer.x[:2] += (.01, -.08)
+        executor.finish()
+        core.step(.1)
+        self.assertIsNone(core.plan)
+        self.assertEqual(core.generation, 2)
+        self.assertEqual(core.wheels, STOP)
+        executor.future.set_exception(ValueError('synthetic search failure'))
+        core.step(.2)
+        self.assertEqual(core.outcome, 'fault')
+
+    def test_uncertainty_and_delayed_stop_envelopes(self):
+        core = self.make_core()
+        envelope = pulse_envelope(core.course, core.localizer, core.cfg, 'forward', .05)
+        self.assertGreater(envelope.duration_s, .05 + .15)
+        self.assertGreater(envelope.position_bound_m, 3 * .05)
+        self.assertGreater(envelope.motion_reserve_used_m, core.cfg['coast_distance_m'])
+        core.localizer.P[0, 0] = .2 ** 2
+        envelope = pulse_envelope(core.course, core.localizer, core.cfg, 'left', .05)
+        self.assertFalse(envelope.safe)
+        self.assertIn('uncertainty', envelope.reason)
+        core = self.make_core()
+        core.localizer.x[:2] = (.24, .8)
+        core.localizer.x[2] = math.pi
+        self.assertFalse(pulse_envelope(core.course, core.localizer, core.cfg, 'forward', .05).safe)
+        self.assertFalse(pulse_envelope(core.course, core.localizer, core.cfg, 'right', .05).safe)
+
+    def test_fixed_landmarks_and_covariance(self):
+        core = self.make_core()
+        x, p = core.localizer.x[3:].copy(), core.localizer.P[3:, :].copy()
+        for step in range(15):
+            core.localizer.predict(.2, .1, .05)
+            core.observe_tf(transform(core, 1 + step * .1), 1 + step * .1, 1 + step * .1)
+        np.testing.assert_array_equal(x, core.localizer.x[3:])
+        np.testing.assert_array_equal(p, core.localizer.P[3:, :])
+        self.assertGreaterEqual(np.linalg.eigvalsh(core.localizer.P).min(), -1e-12)
+
+    def test_envelope_bounds_intermediate_prediction_covariances(self):
+        core = self.make_core()
+        random = np.random.default_rng(42)
+        for action in ('forward', 'left', 'right'):
+            for _ in range(8):
+                factor = random.normal(0, .02, (3, 3))
+                core.localizer.P[:3, :3] = factor @ factor.T
+                envelope = pulse_envelope(core.course, core.localizer, core.cfg, action, .15)
+                predicted = deepcopy(core.localizer)
+                steps = math.ceil(envelope.duration_s / .005)
+                speed = core.cfg['forward_speed_mps'] if action == 'forward' else 0
+                rate = 0 if action == 'forward' else core.cfg[f'{action}_rate_rps']
+                if action == 'right':
+                    rate = -rate
+                for _ in range(steps):
+                    predicted.predict(speed, rate, envelope.duration_s / steps)
+                    bound = 3 * math.sqrt(max(np.linalg.eigvalsh(predicted.P[:2, :2])))
+                    self.assertLessEqual(bound, envelope.position_bound_m + 1e-10)
+
+    def test_goal_needs_new_stopped_observation(self):
+        core = self.start_core()
+        core.stop(1)
+        core.localizer.x[:2] = core.course.goal
+        core.target = len(core.plan.points) - 1
+        core.decide(1.6)
+        self.assertFalse(core.finished)
+        self.assertIsNotNone(core.goal_pending)
+        core.decide(2.2)
+        self.assertFalse(core.finished)
+        # Tag 4 lies forward if the robot faces right at this synthetic goal.
+        core.localizer.x[2] = 0
+        core.observe_tf(transform(core, 2.25, 4), 2.25, 2.25)
+        core.decide(2.3)
+        self.assertEqual(core.outcome, 'complete')
+        self.assertEqual(core.step(2.35), STOP)
+
+    def test_blocked_corner_requests_stopped_replan(self):
+        core = self.make_core()
+        core.step(.05)
+        # Accepting this synthetic corner must not connect through the obstacle.
+        core.localizer.x[:2] = core.course.start
+        core.plan = replace(core.plan, points=(core.course.start, core.course.start, core.course.goal))
+        core.target = 1
+        core.decide(.7)
+        self.assertIsNone(core.plan)
+        self.assertEqual(core.generation, 2)
+        self.assertEqual(core.wheels, STOP)
+
+    def test_ideal_feedback_reaches_goal_for_both_planners(self):
+        # Ideal kinematic/filter feedback verifies sequencing, not real visibility,
+        # stopping dynamics, physical calibration or real-world collision safety.
+        for objective in ('safety', 'distance'):
+            core = self.make_core()
+            core.objective = objective
+            core.plan = None
+            core.future = None
+            core.generation = 0
+            core.request_plan(0, 'test objective')
+            for tick in range(1, 9000):
+                now = tick * PERIOD
+                if core.motion == STOP and tick % 2 == 0:
+                    for tag in core.course.landmarks:
+                        core.observe_tf(transform(core, now, tag), now, now)
+                core.step(now)
+                if core.finished:
+                    break
+            self.assertEqual(core.outcome, 'complete', (objective, core.events[-3:]))
+            self.assertLessEqual(math.dist(core.localizer.x[:2], core.course.goal), core.course.waypoint_tolerance)
 
 if __name__ == '__main__':
     unittest.main()

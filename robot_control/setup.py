@@ -23,6 +23,7 @@ setup(
         ]),
         ('share/' + package_name + '/config', [
             'config/hw4_course.yaml',
+            'config/hw4_navigation.yaml',
             'config/waypoints.txt', 'config/hw3_slam.yaml', 'config/hw3_tags.yaml',
         ]),
     ],

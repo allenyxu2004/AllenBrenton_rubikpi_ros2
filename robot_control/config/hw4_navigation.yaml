@@ -1,0 +1,25 @@
+# Provisional calibration/error bounds. Verify on the actual floor and battery.
+# These values do not override the course's measurement/calibration drive gates.
+hw4_navigation:
+  ros__parameters:
+    forward_left: 0.25
+    forward_right: 0.20
+    forward_speed_mps: 0.219070
+    left_left: -0.45
+    left_right: 0.30
+    left_rate_rps: 2.117690
+    right_left: 0.45
+    right_right: -0.30
+    right_rate_rps: 1.969739
+    settle_s: 0.35
+    observe_s: 0.25
+    min_pulse_s: 0.05
+    max_pulse_s: 0.15
+    coast_distance_m: 0.01
+    lateral_error_m: 0.01
+    pivot_drift_m: 0.01
+    max_tag_gap_s: 2.0
+    max_position_std_m: 0.10
+    max_heading_std_rad: 0.20
+    planning_timeout_s: 15.0
+    max_replans: 3
