@@ -29,7 +29,7 @@ def read_run(path, course, objective):
     expected = json.loads(json.dumps(asdict(course)))
     recorded = config.get('course', {})
     if (config.get('objective') != objective or not recorded
-            or any(expected.get(key) != value for key, value in recorded.items())):
+            or any(expected[key] != value for key, value in recorded.items() if key in expected)):
         raise ValueError(f'{path} uses a different course or objective')
     plans = [dict(generation=r['generation'], points=r['points']) for r in rows if r.get('event') == 'plan']
     if not plans and config.get('waypoints_m'):
@@ -122,8 +122,7 @@ def main(argv=None):
         ax.legend(loc='upper center', bbox_to_anchor=(.5, -.12), fontsize=8, ncol=2)
         print(f'{objective}: {plan.distance:.3f} m; body clearance {plan.clearance:.3f} m; '
               f'{len(plan.graph_nodes)} vertices; {plan.build_s + plan.search_s:.3f} s; {row["status"]}')
-    figure.suptitle('HW4 roadmaps | provisional geometry/calibration' if not (
-            course.measurements_verified and course.calibration_verified) else 'HW4 roadmaps')
+    figure.suptitle('HW4 roadmaps | radius + margin + waypoint tolerance')
     # Exclusive files by default; no accidental overwrite of experiment evidence.
     mode = 'w' if args.overwrite else 'x'
     with targets[1].open(mode, encoding='utf-8') as stream:

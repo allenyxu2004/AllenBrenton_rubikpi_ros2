@@ -1,14 +1,14 @@
-﻿"""ROS-independent pulse navigation, bounded planning, and swept safety guards."""
+"""HW2/HW3-style pulse, settle, observe control for the HW4 roadmaps."""
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, replace
 import math
 from threading import Event
 
 import numpy as np
 
-from robot_control.hw4.course import EPS, point_segment_distance
+from robot_control.hw4.course import EPS
 from robot_control.hw4.localization import FixedMapLocalizer
 from robot_control.hw4.planning import plan_course
 from robot_control.slam.observations import planar_observation, tag_id_from_frame
@@ -16,7 +16,6 @@ from robot_control.slam.trajectory import action_to_goal
 
 PERIOD = 0.05
 WATCHDOG = 0.15
-STOP_DELAY = WATCHDOG + PERIOD  # Watchdog expiry plus the bridge's next serial tick.
 STOP = (0.0, 0.0)
 # Values copied explicitly from the prior HW4 runtime. HW3 behavior is unchanged.
 DEFAULTS = dict(
@@ -28,11 +27,10 @@ DEFAULTS = dict(
     translation_noise=0.08, rotation_noise=0.15, innovation_gate=9.21,
     measurement_noise_m=0.08, range_noise_fraction=0.04,
     initial_position_std_m=0.05, initial_heading_std_rad=0.12,
-    max_position_std_m=0.10, max_heading_std_rad=0.20, heading_tolerance_rad=0.10,
-    max_tag_gap_s=2.0, startup_timeout_s=30.0, route_timeout_s=600.0,
-    planning_timeout_s=15.0, max_replans=3, goal_confirmation_timeout_s=5.0,
+    max_position_std_m=0.60, max_heading_std_rad=0.80, heading_tolerance_rad=0.10,
+    startup_timeout_s=30.0, route_timeout_s=600.0,
+    planning_timeout_s=15.0, max_tag_incidence_deg=75.0,
     min_pulse_s=0.05, max_pulse_s=0.15,
-    coast_distance_m=0.01, lateral_error_m=0.01, pivot_drift_m=0.01,
     log_directory='~/.ros/hw4',
 )
 
@@ -51,11 +49,10 @@ def validate_settings(cfg):
         if key.endswith(('_left', '_right')):
             if abs(value) > 0.5:
                 raise ValueError(f'{key} exceeds the motor command bound')
-        elif value < 0 or (value == 0 and key not in (
-                'coast_distance_m', 'lateral_error_m', 'pivot_drift_m', 'max_replans')):
-            raise ValueError(f'{key} must be positive (error bounds/replan count may be zero)')
-    if type(cfg['max_replans']) is not int:
-        raise ValueError('max_replans must be an integer')
+        elif value <= 0:
+            raise ValueError(f'{key} must be positive')
+    if not 0 < cfg['max_tag_incidence_deg'] < 90:
+        raise ValueError('max_tag_incidence_deg must be between 0 and 90 degrees')
     if cfg['settle_s'] < WATCHDOG:
         raise ValueError('Settling must include the motor watchdog interval')
     if not PERIOD <= cfg['min_pulse_s'] <= cfg['max_pulse_s'] <= WATCHDOG:
@@ -63,12 +60,6 @@ def validate_settings(cfg):
     for key in ('min_pulse_s', 'max_pulse_s'):
         if abs(cfg[key] / PERIOD - round(cfg[key] / PERIOD)) > EPS:
             raise ValueError('Pulse durations must be whole command ticks')
-    if cfg['max_tag_gap_s'] <= cfg['settle_s'] + cfg['observe_s'] + cfg['max_pulse_s']:
-        raise ValueError('Tag timeout must permit one pulse/settle/observe cycle')
-
-
-def position_std(covariance):
-    return math.sqrt(max(0.0, float(np.linalg.eigvalsh(covariance[:2, :2])[-1])))
 
 
 def valid_estimate(localizer):
@@ -78,53 +69,23 @@ def valid_estimate(localizer):
             and np.linalg.eigvalsh(covariance)[0] >= -1e-10)
 
 
-@dataclass(frozen=True)
-class Envelope:
-    safe: bool
-    reason: str
-    end: tuple[float, float]
-    duration_s: float
-    position_bound_m: float
-    heading_std_rad: float
-    required_clearance_m: float
-    available_clearance_m: float
-    motion_reserve_used_m: float
+def tag_incidence(translation, rotation):
+    """Angle between tag-face normal and camera sightline (0 = front-on).
 
-
-def pulse_envelope(course, localizer, cfg, action, duration):
-    """Enclose the complete straight sweep or pivot disc, including a delayed stop.
-
-    The positional variance bound holds throughout [0,T], using covariance
-    cross-term norms and an upper bound on integrated heading process noise.
-    Thus checking the exact entire segment with that radius also covers between
-    command ticks. This is a model bound, not a bound on unmeasured physical bias.
+    Only the viewing geometry decides usability, never the tag ID. A grazing
+    detection is skipped so other tags and commanded-motion prediction continue.
     """
-    x, y, theta = localizer.x[:3]
-    speed = cfg['forward_speed_mps'] if action == 'forward' else 0.0
-    coast = cfg['coast_distance_m'] if speed else 0.0
-    total = duration + STOP_DELAY + (coast / speed if speed else 0.0)
-    distance = speed * total
-    p = localizer.P[:3, :3]
-    variance = (position_std(p) ** 2 + 2 * distance * float(np.linalg.norm(p[:2, 2]))
-                + distance ** 2 * max(0.0, p[2, 2]) + cfg['translation_noise'] ** 2 * total
-                + (speed * cfg['rotation_noise']) ** 2 * total ** 3 / 3)
-    uncertainty = 3 * math.sqrt(max(0.0, float(variance)))
-    heading = math.sqrt(max(0.0, float(p[2, 2])) + cfg['rotation_noise'] ** 2 * total)
-    drift = cfg['lateral_error_m'] if speed else cfg['pivot_drift_m']
-    reserve = speed * STOP_DELAY + coast + drift
-    end = (float(x + distance * math.cos(theta)), float(y + distance * math.sin(theta)))
-    required = course.robot_radius + course.margin + uncertainty + drift
-    available = course.clearance((x, y), end)
-    reason = ''
-    if uncertainty > course.uncertainty_budget:
-        reason = 'Predicted uncertainty exceeds its planning budget'
-    elif reserve > course.motion_reserve:
-        reason = 'Delayed stop/coast/drift exceeds its planning budget'
-    elif heading > cfg['max_heading_std_rad']:
-        reason = 'Predicted heading uncertainty exceeds its limit'
-    elif available <= required:
-        reason = 'Complete swept envelope reaches a hazard or engineering margin'
-    return Envelope(not reason, reason, end, total, uncertainty, heading, required, available, reserve)
+    vector = np.array([translation.x, translation.y, translation.z], dtype=float)
+    quaternion = np.array([rotation.x, rotation.y, rotation.z, rotation.w], dtype=float)
+    if not np.isfinite(vector).all() or not np.isfinite(quaternion).all():
+        raise ValueError('Nonfinite tag pose')
+    distance, norm = np.linalg.norm(vector), np.linalg.norm(quaternion)
+    if distance <= 0 or norm < 1e-6:
+        raise ValueError('Invalid tag pose')
+    x, y, z, w = quaternion / norm
+    normal = np.array([2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)])
+    cosine = min(1.0, abs(float(normal @ vector)) / distance)
+    return math.degrees(math.acos(cosine))
 
 
 class NavigationCore:
@@ -139,8 +100,6 @@ class NavigationCore:
         self.drive = drive
         self.cfg = dict(DEFAULTS, **(settings or {}))
         validate_settings(self.cfg)
-        if drive:
-            course.require_drive_ready()
         c = self.cfg
         self.localizer = FixedMapLocalizer(course, c['translation_noise'], c['rotation_noise'],
                                            c['initial_position_std_m'], c['initial_heading_std_rad'],
@@ -152,10 +111,10 @@ class NavigationCore:
         self.motion = self.wheels = STOP
         self.finished = False
         self.outcome = None
-        self.last_tag = self.run_started = self.goal_pending = None
+        self.last_tag = self.run_started = None
         self.plan = self.future = None
         self.generation = 0
-        self.replans = 0
+        self.pulse_ticks_left = 0
         self.target = 1
         self.stamps = {}
         self.cancel = Event()
@@ -163,6 +122,7 @@ class NavigationCore:
 
     def stop(self, now):
         self.motion = self.wheels = STOP
+        self.pulse_ticks_left = 0
         self.stopped_at = now
         self.next_decision = now + self.cfg['settle_s'] + self.cfg['observe_s']
 
@@ -180,15 +140,9 @@ class NavigationCore:
     def request_plan(self, now, reason):
         if self.future is not None or self.finished:
             return
-        if self.generation:
-            self.replans += 1
-            if self.replans > self.cfg['max_replans']:
-                self.fault(now, 'Replanning limit reached')
-                return
         self.stop(now)
         self.plan = None
         self.generation += 1
-        self.goal_pending = None
         try:
             snapshot = replace(self.course, start=tuple(self.localizer.x[:2]),
                                landmarks=dict(self.course.landmarks))
@@ -197,7 +151,6 @@ class NavigationCore:
             return
         self.cancel = Event()
         self.planning_at = now
-        self.planning_start = snapshot.start
         self.record('planning', generation=self.generation, reason=reason, start_m=snapshot.start)
         self.future = self.executor.submit(plan_course, deepcopy(snapshot), self.objective,
                                            self.cfg['planning_timeout_s'], self.cancel)
@@ -215,13 +168,6 @@ class NavigationCore:
             plan = future.result()
         except Exception as error:
             self.fault(now, f'Planning failed: {error}')
-            return
-        point = tuple(self.localizer.x[:2])
-        target = plan.points[min(1, len(plan.points) - 1)]
-        if (math.dist(point, self.planning_start) > self.course.tracking_allowance
-                or not self.course.feasible(point, target)):
-            self.record('plan_discarded', generation=self.generation, reason='Corrected start/connector changed')
-            self.request_plan(now, 'stale start connection')
             return
         self.plan = plan
         self.target = min(1, len(plan.points) - 1)
@@ -254,18 +200,23 @@ class NavigationCore:
         self.stamps[tag] = stamp
         translation = tf.transform.translation
         try:
+            incidence = tag_incidence(translation, tf.transform.rotation)
+            if incidence > c['max_tag_incidence_deg']:
+                self.record('observation_rejected', tag=tag, reason='grazing_view',
+                            incidence_deg=incidence, source_stamp_s=stamp)
+                return
             forward, left = planar_observation(translation.x, translation.y, translation.z,
                                                c['camera_forward_m'], c['camera_left_m'], c['camera_yaw_rad'])
             if not 0.1 <= math.hypot(forward, left) <= c['max_tag_range_m']:
                 raise ValueError('out of range')
         except ValueError:
-            self.record('observation_rejected', tag=tag, reason='invalid_translation_or_range')
+            self.record('observation_rejected', tag=tag, reason='invalid_pose_or_range')
             return
         noise = c['measurement_noise_m'] + c['range_noise_fraction'] * math.hypot(forward, left)
         result = self.localizer.observe(tag, forward, left, noise)
         if result == 'updated':
             self.last_tag = now - max(0.0, age)
-        self.record('observation', tag=tag, result=result, source_stamp_s=stamp,
+        self.record('observation', tag=tag, result=result, source_stamp_s=stamp, incidence_deg=incidence,
                     pose=self.localizer.x[:3].tolist(), covariance=self.localizer.P[:3, :3].tolist(),
                     diagnostics=self.localizer.last_diagnostics)
 
@@ -286,7 +237,10 @@ class NavigationCore:
                 self.fault(now, 'Invalid prediction')
                 return STOP
             self.record('prediction', dt_s=dt, motion=self.motion, pose=self.localizer.x[:3].tolist())
-            if now >= self.pulse_until:
+            # Count delivered command ticks, rather than comparing a deadline
+            # with a slightly early timer callback and adding an entire extra tick.
+            self.pulse_ticks_left -= 1
+            if self.pulse_ticks_left <= 0:
                 self.stop(now)
         self.poll_plan(now)
         if not self.drive or self.finished:
@@ -298,16 +252,14 @@ class NavigationCore:
             if now - self.start > c['startup_timeout_s']:
                 self.fault(now, 'Startup timeout waiting for plan, mapped tag or motor bridge')
             elif (bridge_ready and self.plan is not None and self.last_tag is not None
-                  and now - self.last_tag <= c['max_tag_gap_s'] and now >= self.next_decision):
+                  and now >= self.next_decision):
                 self.run_started = now
                 self.record('run_start', generation=self.generation)
         elif now - self.run_started > c['route_timeout_s']:
             self.fault(now, 'Route timeout')
         elif not bridge_ready:
             self.fault(now, 'Motor bridge subscriber disappeared')
-        elif self.last_tag is None or now - self.last_tag > c['max_tag_gap_s']:
-            self.fault(now, 'Mapped tag observations went stale')
-        elif (position_std(self.localizer.P) > c['max_position_std_m']
+        elif (max(self.localizer.P[0, 0], self.localizer.P[1, 1]) > c['max_position_std_m'] ** 2
               or self.localizer.P[2, 2] > c['max_heading_std_rad'] ** 2):
             self.fault(now, 'Pose uncertainty exceeded its global limit')
         elif self.motion == STOP and self.plan is not None and now >= self.next_decision:
@@ -317,62 +269,50 @@ class NavigationCore:
     def decide(self, now):
         c = self.cfg
         point = tuple(self.localizer.x[:2])
-        radius = self.course.robot_radius + self.course.margin + 3 * position_std(self.localizer.P)
-        if self.course.clearance(point, point) <= radius + c['pivot_drift_m']:
-            self.fault(now, 'Corrected pose uncertainty reaches a hazard')
+        # Keep only the known-map body/margin checks. Small pose corrections
+        # steer the next pulse; there is no tracking-error or covariance tube stop.
+        minimum = self.course.robot_radius + self.course.margin
+        if self.course.clearance(point, point) <= minimum:
+            self.fault(now, 'Estimated robot footprint intersects the obstacle/wall margin')
             return
         goal = self.plan.points[self.target]
         action, error = action_to_goal(self.localizer.x[:3], goal,
                                        self.course.waypoint_tolerance, c['heading_tolerance_rad'])
-        if self.goal_pending is not None:
-            if (self.last_tag is not None and self.last_tag >= self.stopped_at + c['settle_s']
-                    and action == 'arrived'):
-                self.finished = True
-                self.outcome = 'complete'
-                self.wheels = self.motion = STOP
-                self.record('complete', run_s=now - self.run_started,
-                            generation=self.generation, pose=self.localizer.x[:3].tolist())
-            elif now - self.goal_pending > c['goal_confirmation_timeout_s']:
-                self.fault(now, 'No fresh stopped goal confirmation')
-            elif action != 'arrived':
-                self.goal_pending = None
-            return
         if action == 'arrived':
             if self.target == len(self.plan.points) - 1:
-                self.goal_pending = now
-                self.stop(now)
-                self.record('goal_confirmation', generation=self.generation)
+                self.finished = True
+                self.outcome = 'complete'
+                self.motion = self.wheels = STOP
+                self.record('complete', run_s=now - self.run_started,
+                            generation=self.generation, pose=self.localizer.x[:3].tolist())
             else:
                 following = self.plan.points[self.target + 1]
-                if self.course.clearance(point, following) <= radius + c['pivot_drift_m']:
-                    self.request_plan(now, 'Waypoint tolerance would cut a blocked corner')
+                if self.course.clearance(point, following) <= minimum:
+                    self.request_plan(now, 'Next waypoint connector crosses an obstacle')
                     return
                 self.record('waypoint', target=self.target, generation=self.generation)
-                self.target += 1  # Never skip several corners in one decision.
+                self.target += 1
             return
-        previous = self.plan.points[max(0, self.target - 1)]
-        if point_segment_distance(point, previous, goal) > self.course.tracking_allowance:
-            self.request_plan(now, 'Tracking allowance exceeded')
-            return
-        if self.course.clearance(point, goal) <= radius + c['pivot_drift_m']:
-            self.request_plan(now, 'Corrected waypoint connector blocked')
+        if self.course.clearance(point, goal) <= minimum:
+            self.request_plan(now, 'Corrected waypoint connector crosses an obstacle')
             return
         speed = c['forward_speed_mps'] if action == 'forward' else c[f'{action}_rate_rps']
-        minimum = round(c['min_pulse_s'] / PERIOD)
-        maximum = round(c['max_pulse_s'] / PERIOD)
-        ticks = max(minimum, min(maximum, round(error / (speed * PERIOD))))
-        for ticks in range(ticks, minimum - 1, -1):
-            envelope = pulse_envelope(self.course, self.localizer, c, action, ticks * PERIOD)
-            self.record('envelope', generation=self.generation, action=action, **asdict(envelope))
-            if envelope.safe:
-                break
-        else:
-            self.fault(now, f'No deliverable safe pulse: {envelope.reason}')
-            return
+        minimum_ticks = round(c['min_pulse_s'] / PERIOD)
+        maximum_ticks = round(c['max_pulse_s'] / PERIOD)
+        ticks = max(minimum_ticks, min(maximum_ticks, round(error / (speed * PERIOD))))
+        if action == 'forward':
+            theta = self.localizer.x[2]
+            for ticks in range(ticks, minimum_ticks - 1, -1):
+                reach = speed * (ticks * PERIOD + WATCHDOG)
+                end = (point[0] + reach * math.cos(theta), point[1] + reach * math.sin(theta))
+                if self.course.clearance(point, end) > minimum:
+                    break
+            else:
+                self.fault(now, 'Forward pulse would cross an obstacle/wall margin')
+                return
         self.motion = (speed, 0.0) if action == 'forward' else (0.0, speed if action == 'left' else -speed)
         self.wheels = (c[f'{action}_left'], c[f'{action}_right'])
-        # The timer publishes on a tick; allow roundoff, never sub-tick pulses.
-        self.pulse_until = now + ticks * PERIOD - EPS
+        self.pulse_ticks_left = ticks
         self.record('pulse', action=action, ticks=ticks, duration_s=ticks * PERIOD,
                     waypoint=self.target, wheels=self.wheels, generation=self.generation)
 

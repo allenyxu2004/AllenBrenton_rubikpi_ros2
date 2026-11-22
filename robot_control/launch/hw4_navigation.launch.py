@@ -21,8 +21,6 @@ def launch_course(context):
     drive_value = drive.perform(context)
     if drive_value not in ('true', 'false'):
         raise ValueError('drive must be true or false')
-    if drive_value == 'true':
-        course.require_drive_ready()
 
     share = FindPackageShare('robot_control')
     actions = [

@@ -31,7 +31,7 @@ class Navigator(Node):
         self.record('config', software_version=__version__, schema_version=2, course=asdict(course),
                     objective=objective, drive=drive, parameters=settings,
                     planning_reserve_m=course.padding)
-        # Construction rejects unverified drive configs before publishing commands.
+        # drive=false remains the default; drive=true explicitly enables commands.
         self.core = NavigationCore(course, objective, drive, settings, self.start, self.record)
         self.commands = self.create_publisher(Float32MultiArray, 'motor_commands', 1) if drive else None
         self.pose = self.create_publisher(PoseWithCovarianceStamped, 'hw4/pose', 10)
@@ -60,7 +60,7 @@ class Navigator(Node):
             self.get_logger().info(f"Plan {fields['generation']}: {fields['planner']}, "
                                    f"{fields['distance']:.3f} m, body clearance {fields['clearance']:.3f} m")
         elif event == 'complete':
-            self.get_logger().info('Goal confirmed from fresh stopped observations')
+            self.get_logger().info('Goal reached after pulse/settle/observe')
 
     def on_tf(self, message):
         now = time.monotonic()

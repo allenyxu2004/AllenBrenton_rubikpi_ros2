@@ -1,6 +1,6 @@
 # Project memory for HW4
 
-Last updated: 2026-11-21. This describes local source, not submission or robot deployment. HW4 Voronoi/visibility navigation is now implemented at version 0.1.39 with offline tests; physical verification and robot trials are pending. See [implementation.md](implementation.md) for the current design, layout, implementation status and validation sequence. HW1?HW3 notes below retain their historical review context.
+Current local HW4 version: **0.1.40**. Following the first robot attempt, the user requested HW2/HW3-style control: skip grazing views, steer through ordinary pose corrections, and remove added tracking/covariance/verification gates. See [implementation.md](implementation.md) for the current behavior. Version 0.1.39 was pulled/built on the robot under Jazzy and stopped after one pulse; 0.1.40 contains the simplification and has not been rerun on the robot. HW1-HW3 notes below retain their historical review context.
 
 ## Quick lookup and source precedence
 
@@ -120,7 +120,7 @@ scp ubuntu@ubuntu.local:~/.ros/hw3_slam/RUN_FILENAME.jsonl .
 
 See [REPORT_PLOTS.md](../hw3/REPORT_PLOTS.md) for laptop evaluation. The existing `move_log.sh` helper uses the older `276a` alias, so the explicit SCP command above avoids depending on that alias.
 
-**HW4 is implemented locally.** `hw4_navigation.launch.py`, `hw4_navigation`/`hw4_plot`, `hw4/pose`, and `hw4/path` now exist. See the [package runbook](../../robot_control/README.md#hw4-known-map-obstacle-navigation) and [implementation status](implementation.md#2-implemented-migration-from-the-reviewed-baseline). The supplied twelve-tag course uses the user-provided start/goal and provisional central obstacle. Drive verification flags are false; no robot deployment or successful hardware trial is established.
+**HW4 is implemented locally.** `hw4_navigation.launch.py`, `hw4_navigation`/`hw4_plot`, `hw4/pose`, and `hw4/path` now exist. See the [package runbook](../../robot_control/README.md#hw4-known-map-obstacle-navigation) and [implementation status](implementation.md#2-implemented-migration-from-the-reviewed-baseline). The supplied twelve-tag course uses the user-provided start/goal and provisional central obstacle. The old verification gates are removed in 0.1.40. The 0.1.39 deployment/build succeeded, but its safety attempt faulted after one pulse; no completed physical route is established.
 
 ## Project structure and operating constraints
 

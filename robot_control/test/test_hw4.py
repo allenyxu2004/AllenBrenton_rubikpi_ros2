@@ -15,7 +15,7 @@ import networkx as nx
 import numpy as np
 
 from robot_control.hw4.control import (
-    DEFAULTS, NavigationCore, PERIOD, STOP, pulse_envelope, validate_settings,
+    DEFAULTS, NavigationCore, PERIOD, STOP, tag_incidence, validate_settings,
 )
 from robot_control.hw4.course import (
     Course, point_segment_distance, read_course, segment_box_distance, segment_box_interval,
@@ -53,17 +53,29 @@ class HeldExecutor(InlineExecutor):
         self.future.set_result(function(*args))
 
 
-def transform(core, now, tag=6, stamp=None):
+def transform(core, now, tag=6, stamp=None, incidence=0):
     stamp = now if stamp is None else stamp
     x, y, heading = core.localizer.x[:3]
     tx, ty = core.course.landmarks[tag]
     forward = math.cos(heading) * (tx - x) + math.sin(heading) * (ty - y)
     left = -math.sin(heading) * (tx - x) + math.cos(heading) * (ty - y)
     optical_z = forward - core.cfg['camera_forward_m']
+    vector = np.array([-left, 0.0, optical_z])
+    sight = vector / np.linalg.norm(vector)
+    tangent = np.cross(sight, [0.0, 1.0, 0.0])
+    tangent /= np.linalg.norm(tangent)
+    angle = math.radians(incidence)
+    normal = math.cos(angle) * sight + math.sin(angle) * tangent
+    quaternion = np.array([-normal[1], normal[0], 0.0, 1 + normal[2]])
+    if np.linalg.norm(quaternion) < 1e-8:
+        quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+    quaternion /= np.linalg.norm(quaternion)
+    rotation = SimpleNamespace(**dict(zip(('x', 'y', 'z', 'w'), quaternion)))
     return SimpleNamespace(child_frame_id=f'tag_{tag}',
                            header=SimpleNamespace(frame_id='camera_frame', stamp=SimpleNamespace(
                                sec=math.floor(stamp), nanosec=round((stamp - math.floor(stamp)) * 1e9))),
-                           transform=SimpleNamespace(translation=SimpleNamespace(x=-left, y=0.0, z=optical_z)))
+                           transform=SimpleNamespace(translation=SimpleNamespace(x=-left, y=0.0, z=optical_z),
+                                                     rotation=rotation))
 
 
 class GeometryTests(unittest.TestCase):
@@ -86,19 +98,14 @@ class GeometryTests(unittest.TestCase):
         self.assertLess(course.clearance((-1, 1), (1, 1)), 0)
         self.assertFalse(course.feasible((-1, 1), (1, 1)))
 
-    def test_layout_and_drive_gate(self):
+    def test_layout_and_simple_planning_buffer(self):
         course = read_course(COURSE_PATH)
         self.assertEqual(course.start, (0.6096, 2.4384))
         self.assertEqual(course.goal, (2.4384, 0.6096))
         self.assertAlmostEqual(course.heading, -math.pi / 2)
         self.assertEqual(set(course.landmarks), {0, 2, 3, 4, 5, 6, 7, 8, 21, 22, 23, 24})
         self.assertEqual(course.landmarks[7], (0, .3048))
-        with self.assertRaises(ValueError):
-            course.require_drive_ready()
-        with self.assertRaises(ValueError):
-            replace(course, measurements_verified=True, calibration_verified=True).require_drive_ready()
-        replace(course, measurements_verified=True, calibration_verified=True,
-                verification_notes='synthetic test').require_drive_ready()
+        self.assertAlmostEqual(course.padding, .15 + .08 + .05)
 
     def test_duplicates_and_invalid_config(self):
         text = COURSE_PATH.read_text(encoding='utf-8-sig')
@@ -110,15 +117,13 @@ class GeometryTests(unittest.TestCase):
                 read_course(path)
         course = read_course(COURSE_PATH)
         for changes in [dict(robot_radius=-1), dict(heading=math.nan),
-                        dict(start=(1.5, 1.5)), dict(measurements_verified='false'),
-                        dict(tracking_allowance=.001), dict(bounds=(0, 0, 0, 1))]:
+                        dict(start=(1.5, 1.5)), dict(margin=-.01), dict(bounds=(0, 0, 0, 1))]:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(course, **changes)
 
     def test_union_edges_and_reserved_tangency(self):
         course = Course((0, 0, 10, 10), ((3, 3, 5, 5), (4, 4, 6, 6)), (1, 1), 0, (9, 9), {0: (0, 0)},
-                        robot_radius=.1, margin=.05, tracking_allowance=.05,
-                        uncertainty_budget=0, motion_reserve=0)
+                        robot_radius=.1, margin=.05)
         for a, b in course.boundary_segments:
             mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
             self.assertFalse(any(l + 1e-8 < mid[0] < r - 1e-8 and bot + 1e-8 < mid[1] < top - 1e-8
@@ -154,8 +159,7 @@ class PlannerTests(unittest.TestCase):
 
     def test_visibility_astar_matches_dijkstra_and_analytic_box_detour(self):
         course = Course((0, 0, 10, 10), ((4, 4, 6, 6),), (2, 5), 0, (8, 5), {0: (0, 0)},
-                        robot_radius=.1, margin=.1, tracking_allowance=.05,
-                        uncertainty_budget=0, motion_reserve=0)
+                        robot_radius=.1, margin=.1)
         graph = VisibilityRoadmap(course)
         plan = graph.solve('distance')
         self.assertAlmostEqual(plan.distance,
@@ -213,11 +217,10 @@ class PlannerTests(unittest.TestCase):
 
 
 class ControllerTests(unittest.TestCase):
-    def make_core(self, drive=True, executor=None, **settings):
-        course = replace(read_course(COURSE_PATH), measurements_verified=True,
-                         calibration_verified=True, verification_notes='synthetic test only')
+    def make_core(self, drive=True, executor=None, objective='safety', **settings):
+        course = read_course(COURSE_PATH)
         events = []
-        core = NavigationCore(course, drive=drive, settings=settings, now=0,
+        core = NavigationCore(course, objective=objective, drive=drive, settings=settings, now=0,
                               record=lambda event, **fields: events.append(dict(event=event, **fields)),
                               executor=executor or InlineExecutor())
         self.addCleanup(core.close)
@@ -232,15 +235,13 @@ class ControllerTests(unittest.TestCase):
         core.step(.75)
         return core
 
-    def test_default_dry_run_and_verification_gate(self):
+    def test_default_dry_run_and_settings(self):
         core = self.make_core(drive=False)
         for now in (.05, .5, 1, 10):
             self.assertEqual(core.step(now), STOP)
         self.assertIsNotNone(core.plan)
-        with self.assertRaises(ValueError):
-            NavigationCore(read_course(COURSE_PATH), drive=True)
         for changes in [dict(min_pulse_s=.01), dict(max_pulse_s=.2), dict(forward_left=.6),
-                        dict(max_tag_gap_s=.1), dict(max_replans=1.2), dict(pivot_drift_m=math.nan)]:
+                        dict(max_tag_incidence_deg=90), dict(translation_noise=math.nan)]:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_settings(dict(DEFAULTS, **changes))
 
@@ -274,11 +275,12 @@ class ControllerTests(unittest.TestCase):
             self.assertTrue(core.finished)
             self.assertEqual(core.wheels, STOP)
 
-    def test_tag_loss_timing_gap_and_bad_covariance(self):
+    def test_brief_tag_loss_continues_but_timing_and_invalid_state_stop(self):
         core = self.start_core()
         core.stop(.8)
         core.step(3)
-        self.assertIn('stale', core.events[-1]['reason'])
+        self.assertFalse(core.finished)
+        self.assertNotEqual(core.motion, STOP)
         core = self.start_core()
         self.assertNotEqual(core.motion, STOP)
         self.assertEqual(core.step(1.0), STOP)
@@ -288,11 +290,10 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(core.step(.8), STOP)
         self.assertIn('Invalid', core.events[-1]['reason'])
 
-    def test_worker_failure_timeout_and_stale_result(self):
+    def test_worker_failure_timeout_and_corrected_start(self):
         executor = HeldExecutor()
         core = self.make_core(executor=executor)
         self.assertEqual(core.step(.1), STOP)
-        self.assertIsNone(core.plan)
         core.step(16)
         self.assertEqual(core.outcome, 'fault')
         executor = HeldExecutor()
@@ -300,28 +301,68 @@ class ControllerTests(unittest.TestCase):
         core.localizer.x[:2] += (.01, -.08)
         executor.finish()
         core.step(.1)
-        self.assertIsNone(core.plan)
-        self.assertEqual(core.generation, 2)
-        self.assertEqual(core.wheels, STOP)
+        self.assertIsNotNone(core.plan)
+        self.assertEqual(core.generation, 1)
+        self.assertFalse(core.finished)
+        executor = HeldExecutor()
+        core = self.make_core(executor=executor)
         executor.future.set_exception(ValueError('synthetic search failure'))
         core.step(.2)
         self.assertEqual(core.outcome, 'fault')
 
-    def test_uncertainty_and_delayed_stop_envelopes(self):
+    def test_grazing_views_skip_any_tag_without_stopping(self):
+        for tag in (7, 23):
+            core = self.make_core()
+            core.step(.05)
+            observation = transform(core, .7, tag, incidence=82)
+            self.assertAlmostEqual(tag_incidence(observation.transform.translation,
+                                                 observation.transform.rotation), 82)
+            pose = core.localizer.x.copy()
+            core.observe_tf(observation, .7, .7)
+            np.testing.assert_array_equal(core.localizer.x, pose)
+            self.assertFalse(core.finished)
+            self.assertEqual(core.events[-1]['reason'], 'grazing_view')
+            # A useful view of the SAME tag remains available; no ID blacklist.
+            core.observe_tf(transform(core, .8, tag, incidence=20), .8, .8)
+            self.assertAlmostEqual(core.last_tag, .8)
+            core.step(.8)
+            core.step(.85)
+            self.assertNotEqual(core.motion, STOP)
+            self.assertFalse(core.finished)
+
+    def test_bad_rotation_is_skipped_without_latching_fault(self):
         core = self.make_core()
-        envelope = pulse_envelope(core.course, core.localizer, core.cfg, 'forward', .05)
-        self.assertGreater(envelope.duration_s, .05 + .15)
-        self.assertGreater(envelope.position_bound_m, 3 * .05)
-        self.assertGreater(envelope.motion_reserve_used_m, core.cfg['coast_distance_m'])
-        core.localizer.P[0, 0] = .2 ** 2
-        envelope = pulse_envelope(core.course, core.localizer, core.cfg, 'left', .05)
-        self.assertFalse(envelope.safe)
-        self.assertIn('uncertainty', envelope.reason)
-        core = self.make_core()
-        core.localizer.x[:2] = (.24, .8)
-        core.localizer.x[2] = math.pi
-        self.assertFalse(pulse_envelope(core.course, core.localizer, core.cfg, 'forward', .05).safe)
-        self.assertFalse(pulse_envelope(core.course, core.localizer, core.cfg, 'right', .05).safe)
+        observation = transform(core, .7)
+        observation.transform.rotation = SimpleNamespace(x=0, y=0, z=0, w=0)
+        core.observe_tf(observation, .7, .7)
+        self.assertIsNone(core.last_tag)
+        self.assertFalse(core.finished)
+
+    def test_recorded_pose_correction_steers_instead_of_stopping(self):
+        core = self.start_core()
+        core.stop(1)
+        core.localizer.x[:3] = [.6386162208841162, 2.4973960514454254, -1.6797230238953536]
+        core.plan = replace(core.plan, points=(core.course.start, (.672775227486, .780623376624), core.course.goal))
+        core.target = 1
+        core.decide(1.6)
+        self.assertFalse(core.finished)
+        self.assertEqual(core.generation, 1)
+        self.assertNotEqual(core.motion, STOP)
+        self.assertEqual(core.events[-1]['event'], 'pulse')
+
+    def test_three_tick_pulse_stops_on_early_third_callback(self):
+        core = self.start_core()
+        core.stop(1)
+        core.localizer.x[:3] = [*core.course.start, -math.pi / 2]
+        core.plan = replace(core.plan, points=(core.course.start, (.6096, 1.0), core.course.goal))
+        core.target = 1
+        core.decide(1.6)
+        self.assertEqual(core.pulse_ticks_left, 3)
+        core.previous = 1.6
+        self.assertNotEqual(core.step(1.649), STOP)
+        self.assertNotEqual(core.step(1.699), STOP)
+        self.assertEqual(core.step(1.749), STOP)
+        self.assertFalse(core.finished)
 
     def test_fixed_landmarks_and_covariance(self):
         core = self.make_core()
@@ -333,41 +374,14 @@ class ControllerTests(unittest.TestCase):
         np.testing.assert_array_equal(p, core.localizer.P[3:, :])
         self.assertGreaterEqual(np.linalg.eigvalsh(core.localizer.P).min(), -1e-12)
 
-    def test_envelope_bounds_intermediate_prediction_covariances(self):
-        core = self.make_core()
-        random = np.random.default_rng(42)
-        for action in ('forward', 'left', 'right'):
-            for _ in range(8):
-                factor = random.normal(0, .02, (3, 3))
-                core.localizer.P[:3, :3] = factor @ factor.T
-                envelope = pulse_envelope(core.course, core.localizer, core.cfg, action, .15)
-                predicted = deepcopy(core.localizer)
-                steps = math.ceil(envelope.duration_s / .005)
-                speed = core.cfg['forward_speed_mps'] if action == 'forward' else 0
-                rate = 0 if action == 'forward' else core.cfg[f'{action}_rate_rps']
-                if action == 'right':
-                    rate = -rate
-                for _ in range(steps):
-                    predicted.predict(speed, rate, envelope.duration_s / steps)
-                    bound = 3 * math.sqrt(max(np.linalg.eigvalsh(predicted.P[:2, :2])))
-                    self.assertLessEqual(bound, envelope.position_bound_m + 1e-10)
-
-    def test_goal_needs_new_stopped_observation(self):
+    def test_goal_completes_after_normal_settle_observe_cycle(self):
         core = self.start_core()
         core.stop(1)
         core.localizer.x[:2] = core.course.goal
         core.target = len(core.plan.points) - 1
-        core.decide(1.6)
-        self.assertFalse(core.finished)
-        self.assertIsNotNone(core.goal_pending)
-        core.decide(2.2)
-        self.assertFalse(core.finished)
-        # Tag 4 lies forward if the robot faces right at this synthetic goal.
-        core.localizer.x[2] = 0
-        core.observe_tf(transform(core, 2.25, 4), 2.25, 2.25)
-        core.decide(2.3)
+        core.step(1.6)
         self.assertEqual(core.outcome, 'complete')
-        self.assertEqual(core.step(2.35), STOP)
+        self.assertEqual(core.step(1.65), STOP)
 
     def test_blocked_corner_requests_stopped_replan(self):
         core = self.make_core()
@@ -385,12 +399,7 @@ class ControllerTests(unittest.TestCase):
         # Ideal kinematic/filter feedback verifies sequencing, not real visibility,
         # stopping dynamics, physical calibration or real-world collision safety.
         for objective in ('safety', 'distance'):
-            core = self.make_core()
-            core.objective = objective
-            core.plan = None
-            core.future = None
-            core.generation = 0
-            core.request_plan(0, 'test objective')
+            core = self.make_core(objective=objective)
             for tick in range(1, 9000):
                 now = tick * PERIOD
                 if core.motion == STOP and tick % 2 == 0:

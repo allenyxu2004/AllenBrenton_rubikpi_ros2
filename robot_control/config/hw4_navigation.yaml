@@ -1,5 +1,4 @@
-# Provisional calibration/error bounds. Verify on the actual floor and battery.
-# These values do not override the course's measurement/calibration drive gates.
+# HW3-calibrated pulse/settle/observe settings; HW4 skips grazing tag views.
 hw4_navigation:
   ros__parameters:
     forward_left: 0.25
@@ -15,11 +14,7 @@ hw4_navigation:
     observe_s: 0.25
     min_pulse_s: 0.05
     max_pulse_s: 0.15
-    coast_distance_m: 0.01
-    lateral_error_m: 0.01
-    pivot_drift_m: 0.01
-    max_tag_gap_s: 2.0
-    max_position_std_m: 0.10
-    max_heading_std_rad: 0.20
+    max_position_std_m: 0.60
+    max_heading_std_rad: 0.80
     planning_timeout_s: 15.0
-    max_replans: 3
+    max_tag_incidence_deg: 75.0  # Ignore edge-on detections; keep using other tags.

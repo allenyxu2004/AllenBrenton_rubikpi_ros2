@@ -93,29 +93,21 @@ class Course:
     robot_radius: float = 0.15
     margin: float = 0.08
     waypoint_tolerance: float = 0.05
-    tracking_allowance: float = 0.05
-    uncertainty_budget: float = 0.22
-    motion_reserve: float = 0.07
     voronoi_spacing: float = 0.025
-    measurements_verified: bool = False
-    calibration_verified: bool = False
-    verification_notes: str = ''
 
     def __post_init__(self):
         numbers(self.bounds, 4)
         numbers(self.start, 2)
         numbers(self.goal, 2)
         values = (self.tag_size, self.resolution, self.robot_radius, self.margin,
-                  self.waypoint_tolerance, self.tracking_allowance, self.uncertainty_budget,
-                  self.motion_reserve, self.voronoi_spacing, self.heading)
+                  self.waypoint_tolerance, self.voronoi_spacing, self.heading)
         if not all(map(math.isfinite, values)):
             raise ValueError('Course values must be finite')
         if min(self.tag_size, self.resolution, self.robot_radius,
                self.waypoint_tolerance, self.voronoi_spacing) <= 0:
             raise ValueError('Size, spacing, radius and tolerance must be positive')
-        if min(self.margin, self.tracking_allowance, self.uncertainty_budget,
-               self.motion_reserve) < 0 or self.tracking_allowance < self.waypoint_tolerance:
-            raise ValueError('Reserves must be nonnegative; tracking must cover waypoint tolerance')
+        if self.margin < 0:
+            raise ValueError('Margin must be nonnegative')
         x0, y0, x1, y1 = self.bounds
         if x1 - x0 <= 2 * self.padding or y1 - y0 <= 2 * self.padding:
             raise ValueError('Workspace has no interior after reserve inflation')
@@ -133,19 +125,13 @@ class Course:
             x, y = numbers(point, 2)
             if not x0 <= x <= x1 or not y0 <= y <= y1:
                 raise ValueError('Landmark centers must be inside workspace bounds')
-        for flag in (self.measurements_verified, self.calibration_verified):
-            if type(flag) is not bool:
-                raise ValueError('Verification flags must be YAML booleans')
-        if not isinstance(self.verification_notes, str):
-            raise ValueError('verification_notes must be text')
         for name, point in [('start', self.start), ('goal', self.goal)]:
             if not self.feasible(point, point):
                 raise ValueError(f'{name} is outside reserved free space')
 
     @property
     def padding(self):
-        return (self.robot_radius + self.margin + self.tracking_allowance
-                + self.uncertainty_budget + self.motion_reserve)
+        return self.robot_radius + self.margin + self.waypoint_tolerance
 
     @property
     def inset(self):
@@ -157,11 +143,6 @@ class Course:
     def inflated(self):
         r = self.padding
         return tuple((x0 - r, y0 - r, x1 + r, y1 + r) for x0, y0, x1, y1 in self.obstacles)
-
-    def require_drive_ready(self):
-        if not (self.measurements_verified and self.calibration_verified
-                and self.verification_notes.strip()):
-            raise ValueError('Driving requires verified measurements/calibration and verification_notes')
 
     def clearance(self, a, b):
         """Exact minimum center-to-hazard distance over a complete segment."""
@@ -251,12 +232,7 @@ def read_course(path):
     for field, key in [('tag_size', 'tag_size_m'), ('resolution', 'resolution_m'),
                        ('robot_radius', 'robot_radius_m'), ('margin', 'margin_m'),
                        ('waypoint_tolerance', 'waypoint_tolerance_m'),
-                       ('tracking_allowance', 'tracking_allowance_m'),
-                       ('uncertainty_budget', 'uncertainty_budget_m'),
-                       ('motion_reserve', 'motion_reserve_m'), ('voronoi_spacing', 'voronoi_spacing_m')]:
+                       ('voronoi_spacing', 'voronoi_spacing_m')]:
         if key in data:
             kwargs[field] = float(data[key])
-    for field in ('measurements_verified', 'calibration_verified', 'verification_notes'):
-        if field in data:
-            kwargs[field] = data[field]
     return Course(**kwargs)

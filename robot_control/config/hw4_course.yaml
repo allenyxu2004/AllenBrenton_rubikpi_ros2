@@ -1,8 +1,5 @@
 # User-provided layout; physical survey and calibration remain unverified.
 # Metres; lower-left origin; heading counterclockwise from +x in degrees.
-measurements_verified: false
-calibration_verified: false
-verification_notes: ''
 bounds_m: [0.0, 0.0, 3.048, 3.048]
 start_xy_heading_deg: [0.6096, 2.4384, -90.0]
 goal_m: [2.4384, 0.6096]
@@ -26,12 +23,9 @@ landmarks_m:
   23: [1.3462, 1.5240]
   22: [1.5240, 1.7018]
   21: [1.7018, 1.5240]
-# Provisional engineering budgets, NOT measured robot/error bounds.
+# Planning buffer = robot radius + margin + waypoint tolerance.
 robot_radius_m: 0.15
 margin_m: 0.08
 waypoint_tolerance_m: 0.05
-tracking_allowance_m: 0.05
-uncertainty_budget_m: 0.22
-motion_reserve_m: 0.07
 voronoi_spacing_m: 0.025
 resolution_m: 0.05  # Plot sampling only; neither planner uses a grid.
